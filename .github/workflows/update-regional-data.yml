@@ -1,0 +1,113 @@
+name: Update Regional Mythic Rank Data
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 01:17 UTC = 09:17 China Standard Time.
+    - cron: "17 1 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-regional-mythic-rank-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: python -m pip install --requirement requirements.txt
+
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lua5.1
+
+      - name: Verify shared Core.lua synchronization
+        run: python scripts/sync_core.py --check
+
+      - name: Run test suite
+        env:
+          LUA51: /usr/bin/lua5.1
+        run: python -m pytest -v
+
+      - name: Validate Lua 5.1 syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          luac5.1 -p shared/Core.lua
+          for region in CN US EU TW; do
+            luac5.1 -p "QFXMythicRankData_${region}/Core.lua"
+            luac5.1 -p "QFXMythicRankData_${region}/Data.lua"
+          done
+
+      - name: Fetch and validate all regional cutoff data
+        id: regional_update
+        shell: bash
+        env:
+          RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
+        run: |
+          set +e
+          python scripts/update_all_regions.py
+          exit_code=$?
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          exit 0
+
+      - name: Commit changed regional data
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            QFXMythicRankData_CN/Data.lua
+            QFXMythicRankData_CN/QFXMythicRankData_CN.toc
+            QFXMythicRankData_US/Data.lua
+            QFXMythicRankData_US/QFXMythicRankData_US.toc
+            QFXMythicRankData_EU/Data.lua
+            QFXMythicRankData_EU/QFXMythicRankData_EU.toc
+            QFXMythicRankData_TW/Data.lua
+            QFXMythicRankData_TW/QFXMythicRankData_TW.toc
+          )
+
+          if git diff --quiet -- "${files[@]}"; then
+            echo "Regional Raider.IO data has not changed."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "${files[@]}"
+          git commit -m "Update regional Mythic+ cutoff data"
+          git push origin HEAD:main
+
+      - name: Build installable regional packages
+        run: python scripts/build_packages.py
+
+      - name: Upload regional package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: QFXMythicRankData-packages
+          path: dist/*.zip
+          retention-days: 5
+          if-no-files-found: error
+
+      - name: Fail when any regional update failed
+        if: always()
+        shell: bash
+        run: |
+          if [ "${{ steps.regional_update.outputs.exit_code }}" != "0" ]; then
+            echo "One or more regional Raider.IO updates failed."
+            exit 1
+          fi

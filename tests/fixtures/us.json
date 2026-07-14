@@ -1,0 +1,37 @@
+{
+  "cutoffs": {
+    "updatedAt": "2026-07-15T01:10:00.000Z",
+    "region": {"slug": "us"},
+    "p999": {
+      "allColor": "#ff8000",
+      "all": {"quantile": 0.999, "quantileMinValue": 4200.5, "quantilePopulationCount": 1200, "quantilePopulationFraction": 0.001, "totalPopulationCount": 1200000},
+      "horde": {"quantile": 0.999, "quantileMinValue": 4190.1, "quantilePopulationCount": 650, "quantilePopulationFraction": 0.001, "totalPopulationCount": 650000},
+      "alliance": {"quantile": 0.999, "quantileMinValue": 4210.2, "quantilePopulationCount": 550, "quantilePopulationFraction": 0.001, "totalPopulationCount": 550000}
+    },
+    "p990": {
+      "allColor": "#aa00ff",
+      "all": {"quantile": 0.99, "quantileMinValue": 3900.0, "quantilePopulationCount": 12000, "quantilePopulationFraction": 0.01, "totalPopulationCount": 1200000},
+      "horde": {"quantile": 0.99, "quantileMinValue": 3880.0, "quantilePopulationCount": 6500, "quantilePopulationFraction": 0.01, "totalPopulationCount": 650000},
+      "alliance": {"quantile": 0.99, "quantileMinValue": 3920.0, "quantilePopulationCount": 5500, "quantilePopulationFraction": 0.01, "totalPopulationCount": 550000}
+    },
+    "p900": {
+      "allColor": "#7700ff",
+      "all": {"quantile": 0.9, "quantileMinValue": 3400.0, "quantilePopulationCount": 120000, "quantilePopulationFraction": 0.1, "totalPopulationCount": 1200000},
+      "horde": {"quantile": 0.9, "quantileMinValue": 3380.0, "quantilePopulationCount": 65000, "quantilePopulationFraction": 0.1, "totalPopulationCount": 650000},
+      "alliance": {"quantile": 0.9, "quantileMinValue": 3420.0, "quantilePopulationCount": 55000, "quantilePopulationFraction": 0.1, "totalPopulationCount": 550000}
+    },
+    "p750": {
+      "allColor": "#0070dd",
+      "all": {"quantile": 0.75, "quantileMinValue": 3000.0, "quantilePopulationCount": 300000, "quantilePopulationFraction": 0.25, "totalPopulationCount": 1200000},
+      "horde": {"quantile": 0.75, "quantileMinValue": 2980.0, "quantilePopulationCount": 162500, "quantilePopulationFraction": 0.25, "totalPopulationCount": 650000},
+      "alliance": {"quantile": 0.75, "quantileMinValue": 3020.0, "quantilePopulationCount": 137500, "quantilePopulationFraction": 0.25, "totalPopulationCount": 550000}
+    },
+    "p600": {
+      "allColor": "#1eff00",
+      "all": {"quantile": 0.6, "quantileMinValue": 2700.0, "quantilePopulationCount": 480000, "quantilePopulationFraction": 0.4, "totalPopulationCount": 1200000},
+      "horde": {"quantile": 0.6, "quantileMinValue": 2680.0, "quantilePopulationCount": 260000, "quantilePopulationFraction": 0.4, "totalPopulationCount": 650000},
+      "alliance": {"quantile": 0.6, "quantileMinValue": 2720.0, "quantilePopulationCount": 220000, "quantilePopulationFraction": 0.4, "totalPopulationCount": 550000}
+    }
+  },
+  "ui": {"season": "season-mn-1", "region": "us"}
+}

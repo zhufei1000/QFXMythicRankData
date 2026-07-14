@@ -1,77 +1,90 @@
-# QFX Mythic Rank Data - CN
+# QFX Mythic Rank Data
 
-A lightweight, display-agnostic World of Warcraft addon that exposes China-region Mythic+ season cutoff data through a public Lua API.
+QFXMythicRankData is one source repository that produces four independent World of Warcraft data addons:
 
-The addon creates no UI, timers, SavedVariables, or background refresh loops. Data is retrieved outside the game from Raider.IO's public `season-cutoffs` endpoint and stored in `Data.lua`.
+- `QFXMythicRankData_CN`
+- `QFXMythicRankData_US`
+- `QFXMythicRankData_EU`
+- `QFXMythicRankData_TW`
 
-## Attribution
+Each regional package can be installed by itself. Multiple packages can also be installed together; they register their data in the same public `QFXMythicRankData` Lua API without clearing regions loaded earlier.
 
-Data source: [Raider.IO](https://raider.io)
+The addons contain no display UI, frames, events, timers, `OnUpdate` handlers, settings panels, minimap buttons, or SavedVariables. They do not depend on the in-game Raider.IO addon. Other addons and WeakAuras can consume the public API and provide their own presentation.
 
-Raider.IO data may be incomplete, delayed, or corrected later. Consumers should label numeric rank results as estimates.
+## Data and attribution
+
+Data comes from the public [Raider.IO](https://raider.io) Mythic+ `static-data` and `season-cutoffs` API endpoints. The updater selects the active main season independently for each region, validates the complete response, and atomically replaces only that region's known-good data.
+
+Rank results are estimates derived from published percentile score cutoffs. They are not exact character leaderboard positions and should always be presented as estimates.
 
 ## Installation
 
-Copy `QFXMythicRankData_CN` into:
+Install one or more regional addon directories in:
 
 ```text
 World of Warcraft/_retail_/Interface/AddOns/
 ```
 
-`Data.lua` is replaced only after the complete API response passes validation. A request or validation failure leaves the current known-good data and TOC version unchanged.
+For example, an EU-only installation needs only:
 
-```bash
-python -m pip install -r requirements.txt
-python -m pytest -v
-python scripts/update_cn_data.py
+```text
+Interface/AddOns/QFXMythicRankData_EU/
 ```
 
 ## Public Lua API
 
 ```lua
-local RankData = QFXMythicRankData
-
-local available = RankData:IsRegionAvailable("cn")
-local metadata = RankData:GetMetadata("cn")
-local topOnePercent = RankData:GetCutoff("cn", "p990", "all")
-local allCutoffs = RankData:GetCutoffs("cn", "all")
-local result = RankData:EstimateRank("cn", 3500, "all")
-local playerResult = RankData:EstimatePlayerRank("cn", "all")
+local API = QFXMythicRankData
+local metadata = API:GetMetadata("eu")
+local cutoff = API:GetCutoff("eu", "p990", "all")
+local rank = API:EstimatePlayerRank("eu", "all")
 ```
 
-Available cutoff keys:
+The compatible API methods are:
 
-| Key | Meaning |
-|---|---|
-| `p999` | Top 0.1% |
-| `p990` | Top 1% |
-| `p900` | Top 10% |
-| `p750` | Top 25% |
-| `p600` | Top 40% |
+- `IsRegionAvailable(region)`
+- `GetCurrentRegion()`
+- `GetMetadata(region)`
+- `GetCutoff(region, key, faction)`
+- `GetCutoffs(region, faction)`
+- `GetPlayerScore()`
+- `EstimateRank(region, score, faction)`
+- `EstimatePlayerRank(region, faction)`
+- `RegisterCallback(owner, callback)`
+- `UnregisterCallback(callback)`
 
-Available factions: `all`, `horde`, `alliance`.
+Supported cutoff keys are `p999`, `p990`, `p900`, `p750`, and `p600`. Supported factions are `all`, `horde`, and `alliance`.
 
-### Estimated rank result
+## Development
 
-```lua
-{
-    score = 3500,
-    estimatedRank = 12345,
-    rankMin = 5000,
-    rankMax = 25000,
-    percentileMin = 0.1,
-    percentileMax = 1.0,
-    isEstimate = true,
-    updatedAt = "...",
-}
+Install dependencies and verify the source tree:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python scripts/sync_core.py --check
+python -m pytest -v
 ```
 
-For scores above the top 0.1% line or below the top 40% line, the API returns a broad honest range rather than claiming an exact rank.
+Update all four regions from Raider.IO and build installable packages:
 
-## Automatic updates
+```bash
+python scripts/update_all_regions.py
+python scripts/build_packages.py
+```
 
-`.github/workflows/update-cn-data.yml` runs every day at 09:17 China Standard Time and can also be started manually from the Actions tab.
+The original CN command remains compatible:
 
-`RAIDERIO_ACCESS_KEY` is optional for this single daily request. It can be added later as a GitHub Actions repository secret.
+```bash
+python scripts/update_cn_data.py
+```
 
-If Raider.IO's implicit current-season lookup is unavailable, the updater resolves the one active CN main season from Raider.IO's public `static-data` endpoint for expansion id `11`, then retries `season-cutoffs` with that validated season slug. A future expansion can override this with `RAIDERIO_EXPANSION_ID`.
+`RAIDERIO_ACCESS_KEY` is optional. `RAIDERIO_SEASON` can provide an explicit season slug, and `RAIDERIO_EXPANSION_ID` can override the default expansion id `11`.
+
+`shared/Core.lua` is the only maintained API core. Run `python scripts/sync_core.py` after changing it, or use `--check` to verify that all four addon copies are identical.
+
+## Automation and packages
+
+The `Update Regional Mythic Rank Data` GitHub Actions workflow runs daily at 09:17 China Standard Time and can be started manually. It tests the shared API under Lua 5.1, updates all four regions, creates at most one data commit, and builds four installable ZIP archives.
+
+The archives are uploaded as the `QFXMythicRankData-packages` Actions Artifact and retained for 5 days. CurseForge, GitHub Release, and Wago publishing are not automated at this stage.

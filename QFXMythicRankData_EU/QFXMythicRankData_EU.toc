@@ -1,0 +1,16 @@
+## Interface: 120000, 120001, 120005, 120007
+## Title: QFX Mythic Rank Data - EU
+## Title-zhCN: QFX 大秘境排名数据 - 欧服
+## Title-zhTW: QFX 傳奇鑰石排名資料 - 歐服
+## Notes: Lightweight EU Mythic+ cutoff data provider sourced from Raider.IO.
+## Notes-zhCN: 轻量欧服大秘境分数线数据接口，数据来源 Raider.IO。
+## Notes-zhTW: 輕量歐服傳奇鑰石分數線資料介面，資料來源 Raider.IO。
+## Author: QFX
+## Version: 1.0.202607141705
+## IconTexture: Interface\Icons\Achievement_ChallengeMode_Gold
+## X-Category: Data
+## X-Website: https://raider.io
+## X-Data-Region: EU
+
+Core.lua
+Data.lua
