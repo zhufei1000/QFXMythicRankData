@@ -1,0 +1,55 @@
+name: Update CN Mythic Rank Data
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 01:17 UTC = 09:17 China Standard Time.
+    # Avoiding the top of the hour reduces GitHub schedule congestion.
+    - cron: "17 1 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-cn-mythic-rank-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install updater dependency
+        run: python -m pip install --requirement requirements.txt
+
+      - name: Run updater tests
+        run: python -m pytest -v
+
+      - name: Fetch and validate CN cutoff data
+        env:
+          RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
+        run: python scripts/update_cn_data.py
+
+      - name: Commit changed data
+        shell: bash
+        run: |
+          if git diff --quiet -- QFXMythicRankData_CN/Data.lua QFXMythicRankData_CN/QFXMythicRankData_CN.toc; then
+            echo "Raider.IO data has not changed."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add QFXMythicRankData_CN/Data.lua QFXMythicRankData_CN/QFXMythicRankData_CN.toc
+          git commit -m "Update CN Mythic+ cutoff data"
+          git push origin HEAD:main
