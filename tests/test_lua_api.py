@@ -9,7 +9,7 @@ import subprocess
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-REGIONS = ("cn", "us", "eu", "tw")
+REGIONS = ("cn", "us", "eu", "tw", "kr")
 
 
 def find_lua51() -> str | None:
@@ -93,7 +93,7 @@ def test_all_packages_register_together_and_estimate_rank(
         [
             "local count = 0",
             "for _ in pairs(API.regions) do count = count + 1 end",
-            'assert(count == 4, "expected exactly four registered regions")',
+            'assert(count == 5, "expected exactly five registered regions")',
             'print("MULTI_REGION_LUA_API_OK")',
         ]
     )

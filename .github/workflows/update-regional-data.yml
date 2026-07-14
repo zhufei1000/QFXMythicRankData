@@ -49,7 +49,7 @@ jobs:
         run: |
           set -euo pipefail
           luac5.1 -p shared/Core.lua
-          for region in CN US EU TW; do
+          for region in CN US EU TW KR; do
             luac5.1 -p "QFXMythicRankData_${region}/Core.lua"
             luac5.1 -p "QFXMythicRankData_${region}/Data.lua"
           done
@@ -79,6 +79,8 @@ jobs:
             QFXMythicRankData_EU/QFXMythicRankData_EU.toc
             QFXMythicRankData_TW/Data.lua
             QFXMythicRankData_TW/QFXMythicRankData_TW.toc
+            QFXMythicRankData_KR/Data.lua
+            QFXMythicRankData_KR/QFXMythicRankData_KR.toc
           )
 
           if git diff --quiet -- "${files[@]}"; then

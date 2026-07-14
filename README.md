@@ -1,11 +1,12 @@
 # QFX Mythic Rank Data
 
-QFXMythicRankData is one source repository that produces four independent World of Warcraft data addons:
+QFXMythicRankData is one source repository that produces five independent World of Warcraft data addons:
 
 - `QFXMythicRankData_CN`
 - `QFXMythicRankData_US`
 - `QFXMythicRankData_EU`
 - `QFXMythicRankData_TW`
+- `QFXMythicRankData_KR`
 
 Each regional package can be installed by itself. Multiple packages can also be installed together; they register their data in the same public `QFXMythicRankData` Lua API without clearing regions loaded earlier.
 
@@ -66,7 +67,7 @@ python scripts/sync_core.py --check
 python -m pytest -v
 ```
 
-Update all four regions from Raider.IO and build installable packages:
+Update all five regions from Raider.IO and build installable packages:
 
 ```bash
 python scripts/update_all_regions.py
@@ -81,10 +82,10 @@ python scripts/update_cn_data.py
 
 `RAIDERIO_ACCESS_KEY` is optional. `RAIDERIO_SEASON` can provide an explicit season slug, and `RAIDERIO_EXPANSION_ID` can override the default expansion id `11`.
 
-`shared/Core.lua` is the only maintained API core. Run `python scripts/sync_core.py` after changing it, or use `--check` to verify that all four addon copies are identical.
+`shared/Core.lua` is the only maintained API core. Run `python scripts/sync_core.py` after changing it, or use `--check` to verify that all five addon copies are identical.
 
 ## Automation and packages
 
-The `Update Regional Mythic Rank Data` GitHub Actions workflow runs daily at 09:17 China Standard Time and can be started manually. It tests the shared API under Lua 5.1, updates all four regions, creates at most one data commit, and builds four installable ZIP archives.
+The `Update Regional Mythic Rank Data` GitHub Actions workflow runs daily at 09:17 China Standard Time and can be started manually. It tests the shared API under Lua 5.1, updates all five regions, creates at most one data commit, and builds five installable ZIP archives.
 
 The archives are uploaded as the `QFXMythicRankData-packages` Actions Artifact and retained for 5 days. CurseForge, GitHub Release, and Wago publishing are not automated at this stage.

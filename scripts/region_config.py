@@ -36,6 +36,13 @@ REGIONS = {
         "title_zhcn": "QFX 大秘境排名数据 - 台服",
         "title_zhtw": "QFX 傳奇鑰石排名資料 - 台服",
     },
+    "kr": {
+        "addon": "QFXMythicRankData_KR",
+        "region_upper": "KR",
+        "title": "QFX Mythic Rank Data - KR",
+        "title_zhcn": "QFX 大秘境排名数据 - 韩服",
+        "title_zhtw": "QFX 傳奇鑰石排名資料 - 韓服",
+    },
 }
 
 SUPPORTED_REGIONS = tuple(REGIONS)

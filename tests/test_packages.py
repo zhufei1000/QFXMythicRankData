@@ -13,11 +13,11 @@ import build_packages
 from region_config import REGIONS
 
 
-def test_four_packages_have_one_correct_top_level_directory(
+def test_all_packages_have_one_correct_top_level_directory(
     tmp_path: pathlib.Path,
 ) -> None:
     packages = build_packages.build_packages(tmp_path)
-    assert len(packages) == 4
+    assert len(packages) == len(REGIONS)
 
     for package in packages:
         config = REGIONS[package["region"]]
