@@ -9,18 +9,15 @@ on:
 permissions:
   contents: write
 
+# Share the group with the manual publisher so two CurseForge uploads cannot overlap.
 concurrency:
-  group: update-regional-mythic-rank-data
+  group: curseforge-regional-publish
   cancel-in-progress: false
 
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    outputs:
-      changed: ${{ steps.changes.outputs.changed }}
-      commit_sha: ${{ steps.commit.outputs.commit_sha }}
-      artifact_id: ${{ steps.packages.outputs.artifact-id }}
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -106,7 +103,7 @@ jobs:
             --source-artifact-id 0 \
             --source-commit pending
 
-      - name: Commit changed regional data
+      - name: Create the regional data commit locally
         if: steps.changes.outputs.changed == 'true'
         id: commit
         shell: bash
@@ -128,9 +125,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -- "${files[@]}"
           git commit -m "Update regional Mythic+ cutoff data"
-          commit_sha="$(git rev-parse HEAD)"
-          git push origin HEAD:main
-          echo "commit_sha=${commit_sha}" >> "${GITHUB_OUTPUT}"
+          echo "commit_sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
 
       - name: Upload regional package Artifact
         if: steps.changes.outputs.changed == 'true'
@@ -142,54 +137,32 @@ jobs:
           retention-days: 5
           if-no-files-found: error
 
-  publish:
-    needs: update
-    if: needs.update.outputs.changed == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      actions: read
-    concurrency:
-      group: curseforge-regional-publish
-      cancel-in-progress: false
-
-    steps:
-      - name: Checkout the published data commit
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.update.outputs.commit_sha }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Download packages from this workflow run
-        uses: actions/download-artifact@v4
-        with:
-          name: QFXMythicRankData-packages
-          path: downloaded-artifact
-
       - name: Upload changed regional packages to CurseForge
+        if: steps.changes.outputs.changed == 'true'
+        id: curseforge
         shell: bash
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
           python scripts/publish_curseforge_auto.py \
-            --artifact-dir downloaded-artifact \
+            --artifact-dir dist \
             --mode upload \
             --changelog-file publish-report/changelog.md \
             --report-file publish-report/report.json \
             --source-run-id "${GITHUB_RUN_ID}" \
-            --source-artifact-id "${{ needs.update.outputs.artifact_id }}" \
-            --source-commit "${{ needs.update.outputs.commit_sha }}"
+            --source-artifact-id "${{ steps.packages.outputs.artifact-id }}" \
+            --source-commit "${{ steps.commit.outputs.commit_sha }}"
 
       - name: Upload safe CurseForge publishing report
-        if: always()
+        if: always() && steps.changes.outputs.changed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: curseforge-publish-report
           path: publish-report/report.json
           retention-days: 30
           if-no-files-found: warn
+
+      - name: Push published regional data to main
+        if: steps.changes.outputs.changed == 'true' && steps.curseforge.outcome == 'success'
+        shell: bash
+        run: git push origin HEAD:main
