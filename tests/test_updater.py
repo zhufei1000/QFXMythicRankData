@@ -16,7 +16,7 @@ if str(SCRIPTS) not in sys.path:
 
 import update_all_regions
 import update_region_data as updater
-from region_config import SUPPORTED_REGIONS
+from region_config import REGIONS, SUPPORTED_REGIONS
 
 
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -26,10 +26,11 @@ def load_fixture(region: str) -> dict:
     return json.loads((FIXTURES / f"{region}.json").read_text(encoding="utf-8"))
 
 
-def write_toc(path: pathlib.Path) -> None:
+def write_toc(path: pathlib.Path, project_id: int = 1610279) -> None:
     path.write_text(
         "## Interface: 120000\n"
         "## Version: 0.1.0-bootstrap\n"
+        f"## X-Curse-Project-ID: {project_id}\n"
         "Core.lua\n"
         "Data.lua\n",
         encoding="utf-8",
@@ -42,7 +43,7 @@ def test_fixture_generates_valid_regional_lua(
 ) -> None:
     output = tmp_path / "Data.lua"
     toc = tmp_path / "addon.toc"
-    write_toc(toc)
+    write_toc(toc, REGIONS[region]["curseforge_project_id"])
 
     result = updater.update_region(
         region,
@@ -61,7 +62,13 @@ def test_fixture_generates_valid_regional_lua(
     assert "status = \"ready\"" in generated
     for key in updater.REQUIRED_KEYS:
         assert f"{key} = {{" in generated
-    assert "## Version: 1.0.202607150110" in toc.read_text(encoding="utf-8")
+    toc_text = toc.read_text(encoding="utf-8")
+    assert "## Version: 1.0.202607150110" in toc_text
+    assert toc_text.count("## X-Curse-Project-ID:") == 1
+    assert (
+        f"## X-Curse-Project-ID: {REGIONS[region]['curseforge_project_id']}"
+        in toc_text
+    )
 
 
 def test_response_region_mismatch_fails() -> None:
@@ -146,11 +153,14 @@ def test_invalid_data_does_not_overwrite_existing_files(
 def test_toc_version_updates_from_data_timestamp(tmp_path: pathlib.Path) -> None:
     output = tmp_path / "Data.lua"
     toc = tmp_path / "addon.toc"
-    write_toc(toc)
+    write_toc(toc, REGIONS["eu"]["curseforge_project_id"])
     updater.update_region(
         "eu", input_json=FIXTURES / "eu.json", output=output, toc=toc
     )
-    assert "## Version: 1.0.202607150110" in toc.read_text(encoding="utf-8")
+    toc_text = toc.read_text(encoding="utf-8")
+    assert "## Version: 1.0.202607150110" in toc_text
+    assert toc_text.count("## X-Curse-Project-ID:") == 1
+    assert "## X-Curse-Project-ID: 1610330" in toc_text
 
 
 def test_update_cn_compatibility_entrypoint(tmp_path: pathlib.Path) -> None:
