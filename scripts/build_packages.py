@@ -28,7 +28,7 @@ def _one_match(pattern: str, text: str, field: str) -> str:
     return matches[0]
 
 
-def validate_addon(region: str, config: dict[str, str]) -> dict[str, Any]:
+def validate_addon(region: str, config: dict[str, Any]) -> dict[str, Any]:
     addon = config["addon"]
     addon_dir = ROOT / addon
     toc = addon_dir / f"{addon}.toc"
@@ -56,6 +56,13 @@ def validate_addon(region: str, config: dict[str, str]) -> dict[str, Any]:
         r'^\s*available\s*=\s*(true|false)\s*,', data_text, "available"
     )
     toc_version = _one_match(r"^## Version:\s*(\S+)\s*$", toc_text, "TOC Version")
+    project_id = int(
+        _one_match(
+            r"^## X-Curse-Project-ID:\s*([0-9]+)\s*$",
+            toc_text,
+            "CurseForge project ID",
+        )
+    )
 
     if registered_region != region or data_region != region:
         raise ValueError(f"{addon} contains data for the wrong region")
@@ -66,11 +73,22 @@ def validate_addon(region: str, config: dict[str, str]) -> dict[str, Any]:
         raise ValueError(
             f"{addon} TOC Version {toc_version} does not match {expected_version}"
         )
+    configured_project_id = config["curseforge_project_id"]
+    if not isinstance(configured_project_id, int) or isinstance(
+        configured_project_id, bool
+    ):
+        raise ValueError(f"{addon} configured CurseForge project ID must be an integer")
+    if project_id != configured_project_id:
+        raise ValueError(
+            f"{addon} CurseForge project ID {project_id} does not match "
+            f"configured ID {configured_project_id}"
+        )
 
     return {
         "region": region,
         "addon": addon,
         "version": toc_version,
+        "curseforge_project_id": project_id,
         "files": [core, data, toc],
     }
 
@@ -109,6 +127,7 @@ def build_packages(output_dir: pathlib.Path = DIST) -> list[dict[str, Any]]:
                 "region": region,
                 "file": archive.name,
                 "version": validated["version"],
+                "curseforge_project_id": validated["curseforge_project_id"],
                 "size": archive.stat().st_size,
             }
         )

@@ -14,6 +14,7 @@ REGIONS = {
         "title": "QFX Mythic Rank Data - CN",
         "title_zhcn": "QFX 大秘境排名数据 - 国服",
         "title_zhtw": "QFX 傳奇鑰石排名資料 - 中國區",
+        "curseforge_project_id": 1610279,
     },
     "us": {
         "addon": "QFXMythicRankData_US",
@@ -21,6 +22,7 @@ REGIONS = {
         "title": "QFX Mythic Rank Data - US",
         "title_zhcn": "QFX 大秘境排名数据 - 美服",
         "title_zhtw": "QFX 傳奇鑰石排名資料 - 美服",
+        "curseforge_project_id": 1610327,
     },
     "eu": {
         "addon": "QFXMythicRankData_EU",
@@ -28,6 +30,7 @@ REGIONS = {
         "title": "QFX Mythic Rank Data - EU",
         "title_zhcn": "QFX 大秘境排名数据 - 欧服",
         "title_zhtw": "QFX 傳奇鑰石排名資料 - 歐服",
+        "curseforge_project_id": 1610330,
     },
     "tw": {
         "addon": "QFXMythicRankData_TW",
@@ -35,6 +38,7 @@ REGIONS = {
         "title": "QFX Mythic Rank Data - TW",
         "title_zhcn": "QFX 大秘境排名数据 - 台服",
         "title_zhtw": "QFX 傳奇鑰石排名資料 - 台服",
+        "curseforge_project_id": 1610333,
     },
     "kr": {
         "addon": "QFXMythicRankData_KR",
@@ -42,6 +46,7 @@ REGIONS = {
         "title": "QFX Mythic Rank Data - KR",
         "title_zhcn": "QFX 大秘境排名数据 - 韩服",
         "title_zhtw": "QFX 傳奇鑰石排名資料 - 韓服",
+        "curseforge_project_id": 1610342,
     },
 }
 
