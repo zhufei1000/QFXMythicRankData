@@ -101,5 +101,9 @@ def test_scheduled_workflow_runs_once_and_only_publishes_changed_data() -> None:
     assert 'cron: "17 1 * * *"' in workflow
     assert 'cron: "18 10 * * *"' not in workflow
     assert "Detect regional data changes" in workflow
-    assert "needs.update.outputs.changed == 'true'" in workflow
+    assert "steps.changes.outputs.changed == 'true'" in workflow
     assert "CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}" in workflow
+    assert workflow.index("Upload changed regional packages to CurseForge") < workflow.index(
+        "Push published regional data to main"
+    )
+    assert "group: curseforge-regional-publish" in workflow
