@@ -16,7 +16,11 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    outputs:
+      changed: ${{ steps.changes.outputs.changed }}
+      commit_sha: ${{ steps.commit.outputs.commit_sha }}
+      artifact_id: ${{ steps.packages.outputs.artifact-id }}
 
     steps:
       - name: Checkout repository
@@ -39,34 +43,13 @@ jobs:
       - name: Verify shared Core.lua synchronization
         run: python scripts/sync_core.py --check
 
-      - name: Run test suite
-        env:
-          LUA51: /usr/bin/lua5.1
-        run: python -m pytest -v
-
-      - name: Validate Lua 5.1 syntax
-        shell: bash
-        run: |
-          set -euo pipefail
-          luac5.1 -p shared/Core.lua
-          for region in CN US EU TW KR; do
-            luac5.1 -p "QFXMythicRankData_${region}/Core.lua"
-            luac5.1 -p "QFXMythicRankData_${region}/Data.lua"
-          done
-
       - name: Fetch and validate all regional cutoff data
-        id: regional_update
-        shell: bash
         env:
           RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
-        run: |
-          set +e
-          python scripts/update_all_regions.py
-          exit_code=$?
-          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
-          exit 0
+        run: python scripts/update_all_regions.py
 
-      - name: Commit changed regional data
+      - name: Detect regional data changes
+        id: changes
         shell: bash
         run: |
           set -euo pipefail
@@ -82,22 +65,76 @@ jobs:
             QFXMythicRankData_KR/Data.lua
             QFXMythicRankData_KR/QFXMythicRankData_KR.toc
           )
-
           if git diff --quiet -- "${files[@]}"; then
-            echo "Regional Raider.IO data has not changed."
-            exit 0
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+            echo "Regional Raider.IO data has not changed; packaging and publishing are skipped."
+          else
+            echo "changed=true" >> "${GITHUB_OUTPUT}"
           fi
 
+      - name: Run test suite against updated data
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          LUA51: /usr/bin/lua5.1
+        run: python -m pytest -v
+
+      - name: Validate updated Lua 5.1 syntax
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          luac5.1 -p shared/Core.lua
+          for region in CN US EU TW KR; do
+            luac5.1 -p "QFXMythicRankData_${region}/Core.lua"
+            luac5.1 -p "QFXMythicRankData_${region}/Data.lua"
+          done
+
+      - name: Build installable regional packages
+        if: steps.changes.outputs.changed == 'true'
+        run: python scripts/build_packages.py
+
+      - name: Validate generated packages offline
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          python scripts/publish_curseforge_auto.py \
+            --artifact-dir dist \
+            --mode validate \
+            --changelog-file publish-report/changelog.md \
+            --report-file publish-report/prepublish-validation.json \
+            --source-run-id "${GITHUB_RUN_ID}" \
+            --source-artifact-id 0 \
+            --source-commit pending
+
+      - name: Commit changed regional data
+        if: steps.changes.outputs.changed == 'true'
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            QFXMythicRankData_CN/Data.lua
+            QFXMythicRankData_CN/QFXMythicRankData_CN.toc
+            QFXMythicRankData_US/Data.lua
+            QFXMythicRankData_US/QFXMythicRankData_US.toc
+            QFXMythicRankData_EU/Data.lua
+            QFXMythicRankData_EU/QFXMythicRankData_EU.toc
+            QFXMythicRankData_TW/Data.lua
+            QFXMythicRankData_TW/QFXMythicRankData_TW.toc
+            QFXMythicRankData_KR/Data.lua
+            QFXMythicRankData_KR/QFXMythicRankData_KR.toc
+          )
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -- "${files[@]}"
           git commit -m "Update regional Mythic+ cutoff data"
+          commit_sha="$(git rev-parse HEAD)"
           git push origin HEAD:main
+          echo "commit_sha=${commit_sha}" >> "${GITHUB_OUTPUT}"
 
-      - name: Build installable regional packages
-        run: python scripts/build_packages.py
-
-      - name: Upload regional package artifact
+      - name: Upload regional package Artifact
+        if: steps.changes.outputs.changed == 'true'
+        id: packages
         uses: actions/upload-artifact@v4
         with:
           name: QFXMythicRankData-packages
@@ -105,11 +142,54 @@ jobs:
           retention-days: 5
           if-no-files-found: error
 
-      - name: Fail when any regional update failed
-        if: always()
+  publish:
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    concurrency:
+      group: curseforge-regional-publish
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout the published data commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.update.outputs.commit_sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download packages from this workflow run
+        uses: actions/download-artifact@v4
+        with:
+          name: QFXMythicRankData-packages
+          path: downloaded-artifact
+
+      - name: Upload changed regional packages to CurseForge
         shell: bash
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
-          if [ "${{ steps.regional_update.outputs.exit_code }}" != "0" ]; then
-            echo "One or more regional Raider.IO updates failed."
-            exit 1
-          fi
+          python scripts/publish_curseforge_auto.py \
+            --artifact-dir downloaded-artifact \
+            --mode upload \
+            --changelog-file publish-report/changelog.md \
+            --report-file publish-report/report.json \
+            --source-run-id "${GITHUB_RUN_ID}" \
+            --source-artifact-id "${{ needs.update.outputs.artifact_id }}" \
+            --source-commit "${{ needs.update.outputs.commit_sha }}"
+
+      - name: Upload safe CurseForge publishing report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: curseforge-publish-report
+          path: publish-report/report.json
+          retention-days: 30
+          if-no-files-found: warn
