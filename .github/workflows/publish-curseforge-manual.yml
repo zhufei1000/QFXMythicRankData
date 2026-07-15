@@ -1,0 +1,150 @@
+name: Publish Regional Packages to CurseForge
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Successful regional-data workflow run containing the approved packages
+        required: true
+        default: "29402592179"
+        type: string
+      mode:
+        description: Validate only, or perform the one confirmed upload
+        required: true
+        default: validate
+        type: choice
+        options:
+          - validate
+          - upload
+      confirm:
+        description: Upload mode requires the exact release confirmation string
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: curseforge-regional-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify the exact source run and Artifact
+        id: source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          expected_run_id="29402592179"
+          expected_artifact_id="8337676965"
+          expected_name="QFXMythicRankData-packages"
+          expected_commit="d1046c8a7165aee92e7feed0d9024986099f0bb5"
+          expected_digest="sha256:43db83fbd9f4ca74514c47b09c2983f513b07db0162ff603909811f6599e6aad"
+
+          test "${SOURCE_RUN_ID}" = "${expected_run_id}"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" > source-run.json
+          jq -e \
+            --arg branch "main" \
+            --arg commit "${expected_commit}" \
+            '.id == 29402592179 and .head_branch == $branch and .head_sha == $commit and .status == "completed" and .conclusion == "success"' \
+            source-run.json > /dev/null
+
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/artifacts" > source-artifacts.json
+          jq -e \
+            --argjson artifact_id "${expected_artifact_id}" \
+            --arg name "${expected_name}" \
+            --arg digest "${expected_digest}" \
+            --arg commit "${expected_commit}" \
+            '[.artifacts[] | select(
+              .id == $artifact_id and
+              .name == $name and
+              .expired == false and
+              .digest == $digest and
+              .workflow_run.id == 29402592179 and
+              .workflow_run.head_branch == "main" and
+              .workflow_run.head_sha == $commit
+            )] | length == 1' source-artifacts.json > /dev/null
+
+      - name: Download the approved Artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          gh run download "${SOURCE_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name QFXMythicRankData-packages \
+            --dir downloaded-artifact
+
+      - name: Create the approved changelog
+        shell: bash
+        run: |
+          mkdir -p publish-report
+          cat > publish-report/changelog.md <<'CHANGELOG'
+          Regional Mythic+ cutoff data update.
+
+          Data version: 202607150759
+          Season: season-mn-1
+          Source: Raider.IO regional season cutoffs.
+
+          本次更新包含最新的地区大秘境分数线和地区人口数据。
+          CHANGELOG
+
+      - name: Validate all five packages offline
+        shell: bash
+        run: |
+          python scripts/publish_curseforge.py \
+            --artifact-dir downloaded-artifact \
+            --mode validate \
+            --release-type release \
+            --changelog-file publish-report/changelog.md \
+            --report-file publish-report/report.json
+
+      - name: Require exact upload confirmation
+        if: inputs.mode == 'upload'
+        shell: bash
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: test "${CONFIRM}" = "UPLOAD-202607150759"
+
+      - name: Upload packages to CurseForge
+        if: inputs.mode == 'upload'
+        shell: bash
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          python scripts/publish_curseforge.py \
+            --artifact-dir downloaded-artifact \
+            --mode upload \
+            --release-type release \
+            --changelog-file publish-report/changelog.md \
+            --report-file publish-report/report.json
+
+      - name: Upload safe publishing report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: curseforge-publish-report
+          path: publish-report/report.json
+          if-no-files-found: error
+          retention-days: 30
