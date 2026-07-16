@@ -76,14 +76,28 @@ jobs:
 
       - name: Build installable regional packages
         if: steps.changes.outputs.changed == 'true'
-        run: python scripts/build_packages.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra regions <<< "${{ steps.changes.outputs.changed_regions }}"
+          args=()
+          for region in "${regions[@]}"; do
+            args+=(--regions "$(echo "$region" | tr '[:upper:]' '[:lower:]')")
+          done
+          python scripts/build_packages.py "${args[@]}"
 
       - name: Validate generated packages offline
         if: steps.changes.outputs.changed == 'true'
         shell: bash
         run: |
+          IFS=',' read -ra regions <<< "${{ steps.changes.outputs.changed_regions }}"
+          args=()
+          for region in "${regions[@]}"; do
+            args+=(--regions "$(echo "$region" | tr '[:upper:]' '[:lower:]')")
+          done
           python scripts/publish_curseforge_auto.py \
             --artifact-dir dist \
+            "${args[@]}" \
             --mode validate \
             --changelog-file publish-report/changelog.md \
             --report-file publish-report/prepublish-validation.json \
@@ -132,8 +146,14 @@ jobs:
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
+          IFS=',' read -ra regions <<< "${{ steps.changes.outputs.changed_regions }}"
+          args=()
+          for region in "${regions[@]}"; do
+            args+=(--regions "$(echo "$region" | tr '[:upper:]' '[:lower:]')")
+          done
           python scripts/publish_curseforge_auto.py \
             --artifact-dir dist \
+            "${args[@]}" \
             --mode upload \
             --changelog-file publish-report/changelog.md \
             --report-file publish-report/report.json \

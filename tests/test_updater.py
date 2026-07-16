@@ -384,11 +384,23 @@ def test_select_active_season_for_each_region(region: str) -> None:
     assert updater.select_active_season(payload, region, now) == "season-mn-1"
 
 
+def fake_write_result(region: str) -> dict:
+    return {
+        "success": True,
+        "region": region,
+        "dataChanged": False,
+        "tocChanged": False,
+        "season": "season-mn-1",
+        "updatedAt": "2026-07-15T01:10:00Z",
+        "dataVersion": "202607150110",
+        "population": 100,
+    }
+
+
 def test_all_region_update_continues_after_one_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    calls: list[str] = []
-
+    writes: list[str] = []
     monkeypatch.setattr(update_all_regions, "SUMMARY_PATH", tmp_path / "summary.json")
     monkeypatch.setattr(
         update_all_regions,
@@ -401,35 +413,23 @@ def test_all_region_update_continues_after_one_failure(
         lambda *_: load_named_fixture("score_tiers.json"),
     )
 
-    def fake_update(region: str, **_: object) -> dict:
-        calls.append(region)
+    def fake_cutoff(region: str, *_: object, **__: object) -> dict:
         if region == "eu":
             raise RuntimeError("simulated EU failure")
-        return {
-            "success": True,
-            "region": region,
-            "dataChanged": False,
-            "tocChanged": False,
-            "season": "season-mn-1",
-            "updatedAt": "2026-07-15T01:10:00Z",
-            "dataVersion": "202607150110",
-            "population": 100,
-        }
+        return load_fixture(region)
 
-    monkeypatch.setattr(update_all_regions, "update_region", fake_update)
+    def fake_write(region: str, *_: object, **__: object) -> dict:
+        writes.append(region)
+        return fake_write_result(region)
+
+    monkeypatch.setattr(update_all_regions, "fetch_cutoff_payload", fake_cutoff)
+    monkeypatch.setattr(update_all_regions, "write_region_data", fake_write)
     summary = update_all_regions.run_updates(list(SUPPORTED_REGIONS))
-    assert calls == list(SUPPORTED_REGIONS)
+    assert writes == [region for region in SUPPORTED_REGIONS if region != "eu"]
     assert summary["success"] is False
     assert summary["regions"]["eu"]["success"] is False
     assert summary["regions"]["tw"]["success"] is True
-    assert summary["requests"] == {
-        "staticData": 1,
-        "scoreTiers": 1,
-        "seasonCutoffs": 5,
-        "total": 7,
-    }
-    saved = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
-    assert saved == summary
+    assert summary["requests"]["total"] == 7
 
 
 def test_all_region_update_fetches_shared_sources_once_per_season(
@@ -446,32 +446,28 @@ def test_all_region_update_fetches_shared_sources_once_per_season(
         calls["tiers"] += 1
         return load_named_fixture("score_tiers.json")
 
-    def fake_update(region: str, **_: object) -> dict:
+    def fake_cutoff(region: str, *_: object, **__: object) -> dict:
         calls["cutoffs"] += 1
-        return {
-            "success": True,
-            "region": region,
-            "dataChanged": False,
-            "tocChanged": False,
-            "season": "season-mn-1",
-            "updatedAt": "2026-07-15T01:10:00Z",
-            "dataVersion": "202607150110",
-            "population": 100,
-        }
+        return load_fixture(region)
 
     monkeypatch.setattr(update_all_regions, "fetch_static_data", fake_static)
     monkeypatch.setattr(update_all_regions, "fetch_score_tiers", fake_tiers)
-    monkeypatch.setattr(update_all_regions, "update_region", fake_update)
+    monkeypatch.setattr(update_all_regions, "fetch_cutoff_payload", fake_cutoff)
+    monkeypatch.setattr(
+        update_all_regions,
+        "write_region_data",
+        lambda region, *_args, **_kwargs: fake_write_result(region),
+    )
     summary = update_all_regions.run_updates(list(SUPPORTED_REGIONS))
     assert summary["success"] is True
     assert calls == {"static": 1, "tiers": 1, "cutoffs": 5}
     assert summary["requests"]["total"] == 7
 
 
-def test_invalid_shared_score_tiers_stop_before_any_region_write(
+def test_invalid_shared_score_tiers_stop_ready_regions_before_write(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    calls: list[str] = []
+    writes: list[str] = []
     monkeypatch.setattr(update_all_regions, "SUMMARY_PATH", tmp_path / "summary.json")
     monkeypatch.setattr(
         update_all_regions,
@@ -485,15 +481,391 @@ def test_invalid_shared_score_tiers_stop_before_any_region_write(
     )
     monkeypatch.setattr(
         update_all_regions,
-        "update_region",
-        lambda region, **_: calls.append(region),
+        "fetch_cutoff_payload",
+        lambda region, *_args, **_kwargs: load_fixture(region),
+    )
+    monkeypatch.setattr(
+        update_all_regions,
+        "write_region_data",
+        lambda region, *_args, **_kwargs: writes.append(region),
     )
     summary = update_all_regions.run_updates(list(SUPPORTED_REGIONS))
     assert summary["success"] is False
-    assert calls == []
+    assert writes == []
     assert summary["requests"] == {
         "staticData": 1,
         "scoreTiers": 1,
-        "seasonCutoffs": 0,
-        "total": 2,
+        "seasonCutoffs": 5,
+        "total": 7,
     }
+
+
+def make_season(
+    slug: str, start: str, end: str, *, dungeons: list | None = None
+) -> dict:
+    season = copy.deepcopy(load_named_fixture("static_data.json")["seasons"][0])
+    season["slug"] = slug
+    season["name"] = slug
+    season["short_name"] = slug.upper()
+    season["starts"] = {region: start for region in SUPPORTED_REGIONS}
+    season["ends"] = {region: end for region in SUPPORTED_REGIONS}
+    if dungeons is not None:
+        season["dungeons"] = dungeons
+    return season
+
+
+def make_context(
+    start: str = "2026-07-01T00:00:00Z",
+    end: str = "2026-12-01T00:00:00Z",
+) -> tuple[dict, updater.SeasonContext]:
+    static = {"seasons": [make_season("season-mn-1", start, end)]}
+    context = updater.resolve_season_context(
+        static, "cn", dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc)
+    )
+    return static, context
+
+
+def make_zero_payload(region: str = "cn") -> dict:
+    payload = load_fixture(region)
+    for key in updater.REQUIRED_KEYS:
+        for faction in updater.FACTIONS:
+            block = payload["cutoffs"][key][faction]
+            block["totalPopulationCount"] = 0
+            block["quantilePopulationCount"] = None
+            block["quantilePopulationFraction"] = None
+            block["quantileMinValue"] = None
+    return payload
+
+
+def test_blizzard_season_id_integer_is_saved() -> None:
+    static = load_named_fixture("static_data.json")
+    assert updater.normalize_season_info(static, "cn", "season-mn-1")[
+        "blizzardSeasonID"
+    ] == 17
+
+
+@pytest.mark.parametrize("replacement", ["missing", None])
+def test_blizzard_season_id_missing_or_null_is_omitted(replacement: object) -> None:
+    static = load_named_fixture("static_data.json")
+    if replacement == "missing":
+        del static["seasons"][0]["blizzard_season_id"]
+    else:
+        static["seasons"][0]["blizzard_season_id"] = None
+    info = updater.normalize_season_info(static, "cn", "season-mn-1")
+    assert "blizzardSeasonID" not in info
+
+
+@pytest.mark.parametrize("value", ["17", 17.5, True])
+def test_invalid_blizzard_season_id_fails(value: object) -> None:
+    static = load_named_fixture("static_data.json")
+    static["seasons"][0]["blizzard_season_id"] = value
+    with pytest.raises(ValueError, match="blizzard_season_id"):
+        updater.normalize_season_info(static, "cn", "season-mn-1")
+
+
+def test_resolve_active_season_context() -> None:
+    static, context = make_context()
+    assert context.state == "active"
+    assert context.season["slug"] == "season-mn-1"
+    assert context.state_anchor == dt.datetime(2026, 7, 1, tzinfo=dt.timezone.utc)
+
+
+def test_resolve_upcoming_season_context_in_gap() -> None:
+    static = {
+        "seasons": [
+            make_season("season-mn-1", "2026-01-01T00:00:00Z", "2026-06-30T00:00:00Z"),
+            make_season("season-mn-2", "2026-07-10T00:00:00Z", "2026-12-01T00:00:00Z", dungeons=[]),
+        ]
+    }
+    context = updater.resolve_season_context(
+        static, "cn", dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc)
+    )
+    assert context.state == "upcoming"
+    assert context.season["slug"] == "season-mn-2"
+    assert context.previous_season["slug"] == "season-mn-1"
+    assert context.state_anchor == dt.datetime(2026, 6, 30, tzinfo=dt.timezone.utc)
+
+
+def test_resolve_latest_ended_season_context() -> None:
+    static = {
+        "seasons": [
+            make_season("season-mn-1", "2026-01-01T00:00:00Z", "2026-06-30T00:00:00Z")
+        ]
+    }
+    context = updater.resolve_season_context(
+        static, "cn", dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc)
+    )
+    assert context.state == "ended"
+    assert context.season["slug"] == "season-mn-1"
+
+
+def test_overlapping_active_seasons_fail() -> None:
+    static = {
+        "seasons": [
+            make_season("season-mn-1", "2026-01-01T00:00:00Z", "2026-08-01T00:00:00Z"),
+            make_season("season-mn-2", "2026-07-01T00:00:00Z", "2026-12-01T00:00:00Z"),
+        ]
+    }
+    with pytest.raises(ValueError, match="multiple active"):
+        updater.resolve_season_context(
+            static, "cn", dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc)
+        )
+
+
+def test_no_valid_main_season_fails() -> None:
+    with pytest.raises(ValueError, match="no valid main season"):
+        updater.resolve_season_context(
+            {"seasons": [{"is_main_season": False}]},
+            "cn",
+            dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+        )
+
+
+def test_regions_can_resolve_different_states() -> None:
+    season = make_season(
+        "season-mn-1", "2026-01-01T00:00:00Z", "2026-12-01T00:00:00Z"
+    )
+    season["starts"]["us"] = "2026-08-01T00:00:00Z"
+    static = {"seasons": [season]}
+    now = dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc)
+    assert updater.resolve_season_context(static, "cn", now).state == "active"
+    assert updater.resolve_season_context(static, "us", now).state == "upcoming"
+
+
+def test_offseason_data_is_empty_unavailable_and_stable() -> None:
+    static = {
+        "seasons": [
+            make_season("season-mn-1", "2026-01-01T00:00:00Z", "2026-06-30T00:00:00Z"),
+            make_season("season-mn-2", "2026-07-10T00:00:00Z", "2026-12-01T00:00:00Z", dungeons=[]),
+        ]
+    }
+    context = updater.resolve_season_context(
+        static, "cn", dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc)
+    )
+    first = updater.build_empty_region_data("cn", context, static)
+    second = updater.build_empty_region_data("cn", context, static)
+    assert first == second
+    assert first["status"] == "offseason"
+    assert first["seasonState"] == "upcoming"
+    assert first["available"] is False
+    assert first["population"] == 0
+    assert first["cutoffs"] == {}
+    assert "achievements" not in first and "history" not in first
+    assert first["dataVersion"] == "202606300000"
+
+
+def test_all_zero_cutoff_nodes_are_collecting() -> None:
+    static, context = make_context()
+    payload = make_zero_payload()
+    assert updater.classify_cutoff_payload(
+        payload,
+        "cn",
+        context,
+        dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+    ) == "empty"
+    data = updater.build_empty_region_data(
+        "cn", context, static, cutoff_payload=payload
+    )
+    assert data["status"] == "collecting"
+    assert data["populationByFaction"] == {"all": 0, "horde": 0, "alliance": 0}
+    assert data["cutoffs"] == {}
+    assert "p999" not in updater.render_lua(data)
+
+
+def test_all_missing_cutoffs_are_allowed_only_during_grace() -> None:
+    _, context = make_context()
+    payload = load_fixture("cn")
+    for key in updater.REQUIRED_KEYS:
+        del payload["cutoffs"][key]
+    assert updater.classify_cutoff_payload(
+        payload,
+        "cn",
+        context,
+        dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+    ) == "empty"
+    with pytest.raises(ValueError, match="after the startup grace period"):
+        updater.classify_cutoff_payload(
+            payload,
+            "cn",
+            context,
+            dt.datetime(2026, 7, 20, tzinfo=dt.timezone.utc),
+        )
+
+
+def test_partial_missing_cutoff_nodes_fail() -> None:
+    _, context = make_context()
+    payload = load_fixture("cn")
+    del payload["cutoffs"]["p600"]
+    with pytest.raises(ValueError, match="partially present"):
+        updater.classify_cutoff_payload(payload, "cn", context)
+
+
+def test_mixed_zero_and_positive_populations_fail() -> None:
+    _, context = make_context()
+    payload = make_zero_payload()
+    payload["cutoffs"]["p999"]["all"]["totalPopulationCount"] = 1
+    with pytest.raises(ValueError, match="mix zero and positive"):
+        updater.classify_cutoff_payload(payload, "cn", context)
+
+
+def test_ready_payload_still_uses_strict_score_validation() -> None:
+    static, context = make_context()
+    payload = load_fixture("cn")
+    assert updater.classify_cutoff_payload(payload, "cn", context) == "ready"
+    del payload["cutoffs"]["p999"]["all"]["quantileMinValue"]
+    with pytest.raises(ValueError, match="quantileMinValue is not numeric"):
+        updater.build_ready_region_data(
+            payload,
+            "cn",
+            static,
+            load_named_fixture("score_tiers.json"),
+        )
+
+
+@pytest.mark.parametrize("status", [204, 404])
+def test_cutoff_204_or_404_is_allowed_when_not_ready(
+    status: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    response = updater.requests.Response()
+    response.status_code = status
+    response.url = updater.CUTOFFS_URL
+    monkeypatch.setattr(updater.requests, "get", lambda *_args, **_kwargs: response)
+    assert updater.fetch_cutoff_payload(
+        "cn", "season-mn-2", allow_not_ready=True
+    ) is None
+
+
+def test_cutoff_404_is_not_allowed_outside_grace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = updater.requests.Response()
+    response.status_code = 404
+    response.url = updater.CUTOFFS_URL
+    monkeypatch.setattr(updater.requests, "get", lambda *_args, **_kwargs: response)
+    with pytest.raises(RuntimeError, match="404"):
+        updater.fetch_cutoff_payload("cn", "season-mn-1", allow_not_ready=False)
+
+
+def configure_update_orchestration(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    static: dict,
+    cutoff_factory,
+    tier_calls: list[str],
+) -> None:
+    monkeypatch.setattr(update_all_regions, "SUMMARY_PATH", tmp_path / "summary.json")
+    monkeypatch.setattr(update_all_regions, "fetch_static_data", lambda *_: static)
+    monkeypatch.setattr(update_all_regions, "fetch_cutoff_payload", cutoff_factory)
+
+    def fake_tiers(season: str, *_: object) -> list:
+        tier_calls.append(season)
+        return load_named_fixture("score_tiers.json")
+
+    monkeypatch.setattr(update_all_regions, "fetch_score_tiers", fake_tiers)
+    monkeypatch.setattr(
+        update_all_regions,
+        "write_region_data",
+        lambda region, *_args, **_kwargs: fake_write_result(region),
+    )
+
+
+def test_all_offseason_regions_only_request_static_data(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    static = {
+        "seasons": [
+            make_season("season-mn-1", "2026-01-01T00:00:00Z", "2026-06-30T00:00:00Z")
+        ]
+    }
+    tiers: list[str] = []
+    configure_update_orchestration(
+        monkeypatch,
+        tmp_path,
+        static,
+        lambda *_args, **_kwargs: pytest.fail("offseason requested cutoffs"),
+        tiers,
+    )
+    summary = update_all_regions.run_updates(
+        list(SUPPORTED_REGIONS),
+        now=dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+    )
+    assert summary["success"] is True
+    assert summary["requests"]["total"] == 1
+    assert tiers == []
+
+
+def test_three_active_two_offseason_requests_total_five(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    season = make_season(
+        "season-mn-1", "2026-01-01T00:00:00Z", "2026-12-01T00:00:00Z"
+    )
+    for region in ("tw", "kr"):
+        season["ends"][region] = "2026-06-30T00:00:00Z"
+    static = {"seasons": [season]}
+    cutoff_calls: list[str] = []
+    tiers: list[str] = []
+
+    def cutoffs(region: str, *_: object, **__: object) -> dict:
+        cutoff_calls.append(region)
+        return load_fixture(region)
+
+    configure_update_orchestration(monkeypatch, tmp_path, static, cutoffs, tiers)
+    summary = update_all_regions.run_updates(
+        list(SUPPORTED_REGIONS),
+        now=dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+    )
+    assert summary["success"] is True
+    assert cutoff_calls == ["cn", "us", "eu"]
+    assert summary["requests"]["total"] == 5
+
+
+def test_all_collecting_regions_skip_score_tiers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    static, _ = make_context()
+    tiers: list[str] = []
+    configure_update_orchestration(
+        monkeypatch,
+        tmp_path,
+        static,
+        lambda region, *_args, **_kwargs: make_zero_payload(region),
+        tiers,
+    )
+    summary = update_all_regions.run_updates(
+        list(SUPPORTED_REGIONS),
+        now=dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+    )
+    assert summary["success"] is True
+    assert summary["requests"]["total"] == 6
+    assert tiers == []
+
+
+def test_two_active_seasons_each_reuse_one_score_tier_request(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    first = make_season(
+        "season-mn-1", "2026-01-01T00:00:00Z", "2026-12-01T00:00:00Z"
+    )
+    second = make_season(
+        "season-mn-2", "2026-08-01T00:00:00Z", "2027-01-01T00:00:00Z"
+    )
+    for region in ("eu", "tw", "kr"):
+        first["ends"][region] = "2026-06-30T00:00:00Z"
+        second["starts"][region] = "2026-07-01T00:00:00Z"
+    static = {"seasons": [first, second]}
+    tiers: list[str] = []
+
+    def cutoffs(region: str, season: str, *_: object, **__: object) -> dict:
+        payload = load_fixture(region)
+        payload["ui"]["season"] = season
+        return payload
+
+    configure_update_orchestration(monkeypatch, tmp_path, static, cutoffs, tiers)
+    summary = update_all_regions.run_updates(
+        list(SUPPORTED_REGIONS),
+        now=dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+    )
+    assert summary["success"] is True
+    assert tiers == ["season-mn-1", "season-mn-2"]
+    assert summary["requests"]["total"] == 8

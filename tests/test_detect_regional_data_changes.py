@@ -4,6 +4,8 @@ import pathlib
 import subprocess
 import sys
 
+import pytest
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -20,13 +22,23 @@ def _data(
     updated_at: str = "first",
     season: str = "season-mn-1",
     score: str = "3000.0",
+    status: str = "ready",
+    season_state: str = "active",
+    available: str = "true",
+    population: int = 100,
+    dungeon: str = "alpha",
 ) -> str:
     return (
         f'API:RegisterRegion("{region.lower()}", {{\n'
         f'    dataVersion = "{data_version}",\n'
         f'    season = "{season}",\n'
+        f'    status = "{status}",\n'
+        f'    seasonState = "{season_state}",\n'
+        f"    available = {available},\n"
         f'    updatedAt = "{updated_at}",\n'
-        "    population = 100,\n"
+        f"    population = {population},\n"
+        f'    seasonInfo = {{ dungeons = {{ "{dungeon}" }} }},\n'
+        "    cutoffs = { p999 = {} },\n"
         f"    score = {score},\n"
         "})\n"
     )
@@ -127,3 +139,22 @@ def test_missing_baseline_is_treated_as_changed(tmp_path: pathlib.Path) -> None:
     path = repo / "QFXMythicRankData_KR" / "Data.lua"
     path.write_text(_data("KR"), encoding="utf-8")
     assert detect.detect_changed_regions(repo) == ["KR"]
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"status": "offseason"},
+        {"season_state": "upcoming"},
+        {"available": "false"},
+        {"population": 0},
+        {"dungeon": "beta"},
+    ],
+)
+def test_state_and_season_info_changes_trigger_publish(
+    tmp_path: pathlib.Path, changes: dict[str, object]
+) -> None:
+    repo = _create_repo(tmp_path)
+    path = repo / "QFXMythicRankData_CN" / "Data.lua"
+    path.write_text(_data("CN", **changes), encoding="utf-8")
+    assert detect.detect_changed_regions(repo) == ["CN"]

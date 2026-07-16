@@ -27,7 +27,7 @@ from typing import Callable
 from region_config import REGIONS, SUPPORTED_REGIONS
 
 
-VERSION = "1.0.202607150759"
+VERSION = "2.0.202607150759"
 DATA_VERSION = "202607150759"
 SOURCE_RUN_ID = 29402592179
 SOURCE_ARTIFACT_ID = 8337676965
@@ -35,13 +35,15 @@ SOURCE_COMMIT = "d1046c8a7165aee92e7feed0d9024986099f0bb5"
 GAME_VERSIONS_URL = "https://wow.curseforge.com/api/game/versions"
 UPLOAD_URL = "https://wow.curseforge.com/api/projects/{project_id}/upload-file"
 REGION_ORDER = ("cn", "us", "eu", "tw", "kr")
-EXPECTED_CHANGELOG = """Regional Mythic+ cutoff data update.
+EXPECTED_CHANGELOG = """Regional Mythic+ database update.
 
-Data version: 202607150759
-Season: season-mn-1
-Source: Raider.IO regional season cutoffs.
+CN: season-mn-1 | ready | 2.0.202607150759
+US: season-mn-1 | ready | 2.0.202607150759
+EU: season-mn-1 | ready | 2.0.202607150759
+TW: season-mn-1 | ready | 2.0.202607150759
+KR: season-mn-1 | ready | 2.0.202607150759
 
-本次更新包含最新的地区大秘境分数线和地区人口数据。
+Source: Raider.IO public Mythic+ API.
 """
 MAX_UNCOMPRESSED_BYTES = 16 * 1024 * 1024
 MAX_MEMBER_BYTES = 8 * 1024 * 1024
@@ -72,6 +74,9 @@ class Package:
     zip_path: pathlib.Path
     version: str
     data_version: str
+    season: str
+    status: str
+    season_state: str
     interface_versions: tuple[str, ...]
 
 
@@ -124,9 +129,13 @@ def _validate_package(region: str, zip_path: pathlib.Path) -> Package:
     if not isinstance(project_id, int) or isinstance(project_id, bool) or project_id <= 0:
         raise PublishError(f"{region_upper}: invalid configured CurseForge project ID")
 
-    expected_filename = f"{addon}-{VERSION}.zip"
-    if zip_path.name != expected_filename:
+    filename_match = re.fullmatch(
+        rf"{re.escape(addon)}-(2\.0\.([0-9]{{12}}))\.zip", zip_path.name
+    )
+    if filename_match is None:
         raise PublishError(f"{region_upper}: unexpected ZIP filename {zip_path.name!r}")
+    filename_version = filename_match.group(1)
+    filename_data_version = filename_match.group(2)
 
     expected_names = {
         f"{addon}/Core.lua",
@@ -156,8 +165,8 @@ def _validate_package(region: str, zip_path: pathlib.Path) -> Package:
         raise PublishError(f"{region_upper}: invalid ZIP package") from exc
 
     toc_version = _one_metadata_value(toc_text, "Version", region_upper)
-    if toc_version != VERSION:
-        raise PublishError(f"{region_upper}: TOC version does not match {VERSION}")
+    if toc_version != filename_version:
+        raise PublishError(f"{region_upper}: TOC version does not match ZIP filename")
     toc_project = _one_metadata_value(toc_text, "X-Curse-Project-ID", region_upper)
     if toc_project != str(project_id):
         raise PublishError(f"{region_upper}: TOC CurseForge project ID does not match configuration")
@@ -172,14 +181,31 @@ def _validate_package(region: str, zip_path: pathlib.Path) -> Package:
     interface_versions = tuple(_interface_name(value, region_upper) for value in interface_values)
 
     data_version_matches = re.findall(r'^\s*dataVersion\s*=\s*"([^"]+)"\s*,', data_text, re.MULTILINE)
-    if data_version_matches != [DATA_VERSION]:
-        raise PublishError(f"{region_upper}: Data.lua dataVersion does not match {DATA_VERSION}")
+    if data_version_matches != [filename_data_version]:
+        raise PublishError(f"{region_upper}: Data.lua dataVersion does not match ZIP filename")
+    if toc_version != f"2.0.{filename_data_version}":
+        raise PublishError(f"{region_upper}: TOC version is not derived from Data.lua")
     region_matches = re.findall(r'^\s*region\s*=\s*"([^"]+)"\s*,', data_text, re.MULTILINE)
     if region_matches != [region]:
         raise PublishError(f"{region_upper}: Data.lua region does not match package")
     register_matches = re.findall(r'API:RegisterRegion\("([^"]+)"\s*,', data_text)
     if register_matches != [region]:
         raise PublishError(f"{region_upper}: Data.lua RegisterRegion does not match package")
+    season_matches = re.findall(r'^ {4}season\s*=\s*"([^"]+)"\s*,', data_text, re.MULTILINE)
+    status_matches = re.findall(r'^ {4}status\s*=\s*"([^"]+)"\s*,', data_text, re.MULTILINE)
+    season_state_matches = re.findall(r'^ {4}seasonState\s*=\s*"([^"]+)"\s*,', data_text, re.MULTILINE)
+    if len(season_matches) != 1 or re.fullmatch(r"season-[a-z0-9-]+", season_matches[0]) is None:
+        raise PublishError(f"{region_upper}: Data.lua season is invalid")
+    if status_matches not in [["ready"], ["collecting"], ["offseason"]]:
+        raise PublishError(f"{region_upper}: Data.lua status is invalid")
+    if season_state_matches not in [["active"], ["upcoming"], ["ended"]]:
+        raise PublishError(f"{region_upper}: Data.lua seasonState is invalid")
+    status = status_matches[0]
+    season_state = season_state_matches[0]
+    if status in {"ready", "collecting"} and season_state != "active":
+        raise PublishError(f"{region_upper}: status and seasonState are inconsistent")
+    if status == "offseason" and season_state not in {"upcoming", "ended"}:
+        raise PublishError(f"{region_upper}: status and seasonState are inconsistent")
 
     return Package(
         region=region,
@@ -188,37 +214,48 @@ def _validate_package(region: str, zip_path: pathlib.Path) -> Package:
         project_id=project_id,
         zip_path=zip_path,
         version=toc_version,
-        data_version=DATA_VERSION,
+        data_version=filename_data_version,
+        season=season_matches[0],
+        status=status,
+        season_state=season_state,
         interface_versions=interface_versions,
     )
 
 
-def validate_artifact(artifact_dir: pathlib.Path, changelog_file: pathlib.Path) -> list[Package]:
+def validate_artifact(
+    artifact_dir: pathlib.Path,
+    changelog_file: pathlib.Path,
+    regions: list[str] | tuple[str, ...] | None = None,
+    expected_changelog: str | None = None,
+) -> list[Package]:
+    selected = tuple(regions or REGION_ORDER)
     if tuple(SUPPORTED_REGIONS) != REGION_ORDER:
         raise PublishError("region_config.py region order must be CN, US, EU, TW, KR")
-    project_ids = [REGIONS[region].get("curseforge_project_id") for region in REGION_ORDER]
+    project_ids = [REGIONS[region].get("curseforge_project_id") for region in selected]
     if len(set(project_ids)) != len(project_ids):
         raise PublishError("configured CurseForge project IDs must be unique")
     if not artifact_dir.is_dir():
         raise PublishError("artifact directory does not exist")
     actual = list(artifact_dir.iterdir())
-    expected_paths = {
-        artifact_dir / f"{REGIONS[region]['addon']}-{VERSION}.zip" for region in REGION_ORDER
-    }
-    if set(actual) != expected_paths or any(not path.is_file() for path in actual):
-        raise PublishError("artifact directory must contain exactly the five expected ZIP files")
+    expected_paths: list[pathlib.Path] = []
+    for region in selected:
+        addon = str(REGIONS[region]["addon"])
+        candidates = list(artifact_dir.glob(f"{addon}-*.zip"))
+        if len(candidates) != 1:
+            raise PublishError(f"{region.upper()}: expected exactly one package ZIP")
+        expected_paths.append(candidates[0])
+    if set(actual) != set(expected_paths) or any(not path.is_file() for path in actual):
+        raise PublishError("artifact directory must contain exactly the selected regional ZIP files")
     try:
         changelog = changelog_file.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         raise PublishError("changelog file could not be read") from exc
-    if changelog.replace("\r\n", "\n") != EXPECTED_CHANGELOG:
+    approved_changelog = expected_changelog or EXPECTED_CHANGELOG
+    if changelog.replace("\r\n", "\n") != approved_changelog:
         raise PublishError("changelog content does not match the approved release text")
     return [
-        _validate_package(
-            region,
-            artifact_dir / f"{REGIONS[region]['addon']}-{VERSION}.zip",
-        )
-        for region in REGION_ORDER
+        _validate_package(region, path)
+        for region, path in zip(selected, expected_paths)
     ]
 
 
@@ -434,10 +471,17 @@ def execute(
     report_file: pathlib.Path | None = None,
     request: HttpRequest = default_http_request,
     sleep: Callable[[float], None] = time.sleep,
+    regions: list[str] | tuple[str, ...] | None = None,
+    expected_changelog: str | None = None,
 ) -> int:
     if release_type != "release":
         raise PublishError("only the approved release type is allowed")
-    packages = validate_artifact(artifact_dir, changelog_file)
+    packages = validate_artifact(
+        artifact_dir,
+        changelog_file,
+        regions=regions,
+        expected_changelog=expected_changelog,
+    )
     if mode == "validate":
         rows = [_result_row(package, "validated", None, 0, None) for package in packages]
         _write_report(report_file, _report(mode, rows))
@@ -475,6 +519,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--release-type", required=True, choices=("release",))
     parser.add_argument("--changelog-file", required=True, type=pathlib.Path)
     parser.add_argument("--report-file", type=pathlib.Path)
+    parser.add_argument(
+        "--regions",
+        nargs="+",
+        choices=SUPPORTED_REGIONS,
+        default=list(SUPPORTED_REGIONS),
+    )
     return parser.parse_args(argv)
 
 
@@ -487,6 +537,7 @@ def main(argv: list[str] | None = None) -> int:
             args.release_type,
             args.changelog_file,
             args.report_file,
+            regions=args.regions,
         )
     except PublishError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

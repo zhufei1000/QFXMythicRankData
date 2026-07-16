@@ -13,6 +13,7 @@ import re
 import sys
 import tempfile
 import time
+from dataclasses import dataclass
 from typing import Any
 
 import requests
@@ -38,9 +39,19 @@ ACHIEVEMENT_KEYS = (
 )
 HISTORY_KEYS = ("p999", "p990", "p900", "p750", "p600")
 HISTORY_DAYS = 30
+EMPTY_SEASON_GRACE_DAYS = 14
 FACTIONS = ("all", "horde", "alliance")
 SEASON_PATTERN = re.compile(r"season-[a-z0-9-]+")
 COLOR_PATTERN = re.compile(r"#[0-9A-Fa-f]{6}")
+
+
+@dataclass(frozen=True)
+class SeasonContext:
+    state: str
+    season: dict[str, Any]
+    previous_season: dict[str, Any] | None
+    next_season: dict[str, Any] | None
+    state_anchor: dt.datetime
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -170,12 +181,65 @@ def fetch_cutoff_payload(
     season: str,
     access_key: str = "",
     timeout: int = 30,
-) -> dict[str, Any]:
+    allow_not_ready: bool = False,
+) -> dict[str, Any] | None:
     params = {"region": region, "season": season}
     if access_key:
         params["access_key"] = access_key
-    return request_json(
-        CUTOFFS_URL, params, timeout, f"{region} cutoff data", expected_type=dict
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "QFXMythicRankData/2.0 (+https://raider.io)",
+    }
+    last_error: Exception | None = None
+
+    for attempt in range(1, 4):
+        response: requests.Response | None = None
+        try:
+            response = requests.get(
+                CUTOFFS_URL,
+                params=params,
+                headers=headers,
+                timeout=timeout,
+            )
+            if response.status_code in {204, 404} and allow_not_ready:
+                return None
+            if response.status_code == 204:
+                raise RuntimeError(
+                    f"Unable to fetch Raider.IO {region} cutoff data: HTTP 204"
+                )
+            if response.status_code >= 400:
+                retryable = response.status_code == 429 or response.status_code >= 500
+                if not retryable:
+                    response.raise_for_status()
+                response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise ValueError("response is not the expected JSON type: dict")
+            return payload
+        except requests.HTTPError as exc:
+            last_error = exc
+            status = exc.response.status_code if exc.response is not None else None
+            retryable = status == 429 or (status is not None and status >= 500)
+            if not retryable:
+                raise RuntimeError(
+                    f"Unable to fetch Raider.IO {region} cutoff data: {exc}"
+                ) from exc
+        except RuntimeError:
+            raise
+        except (requests.RequestException, ValueError) as exc:
+            last_error = exc
+
+        if attempt < 3:
+            delay = _retry_delay(response, attempt)
+            print(
+                f"WARNING: Raider.IO {region} cutoff data attempt {attempt} "
+                f"failed; retrying in {delay:g}s: {last_error}",
+                file=sys.stderr,
+            )
+            time.sleep(delay)
+
+    raise RuntimeError(
+        f"Unable to fetch Raider.IO {region} cutoff data: {last_error}"
     )
 
 
@@ -222,6 +286,104 @@ def parse_timestamp(value: str, field: str) -> dt.datetime:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=dt.timezone.utc)
     return parsed.astimezone(dt.timezone.utc)
+
+
+def normalize_now(now: dt.datetime | None = None) -> dt.datetime:
+    value = now or dt.datetime.now(dt.timezone.utc)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=dt.timezone.utc)
+    return value.astimezone(dt.timezone.utc)
+
+
+def season_interval(
+    season: dict[str, Any], region: str, field: str = "static-data season"
+) -> tuple[dt.datetime, dt.datetime]:
+    starts = season.get("starts")
+    ends = season.get("ends")
+    if not isinstance(starts, dict) or not isinstance(ends, dict):
+        raise ValueError(f"{field} starts/ends are missing")
+    start = parse_timestamp(starts.get(region), f"{field}.starts.{region}")
+    end = parse_timestamp(ends.get(region), f"{field}.ends.{region}")
+    if start >= end:
+        raise ValueError(f"{field} startsAt must be before endsAt")
+    return start, end
+
+
+def resolve_season_context(
+    payload: dict[str, Any],
+    region: str,
+    now: dt.datetime | None = None,
+) -> SeasonContext:
+    if region not in SUPPORTED_REGIONS:
+        raise ValueError(f"unsupported region: {region}")
+    seasons = payload.get("seasons")
+    if not isinstance(seasons, list):
+        raise ValueError("static-data.seasons is missing")
+
+    current = normalize_now(now)
+    valid: list[tuple[dt.datetime, dt.datetime, dict[str, Any]]] = []
+    for index, season in enumerate(seasons):
+        if not isinstance(season, dict) or season.get("is_main_season") is not True:
+            continue
+        slug = season.get("slug")
+        if not isinstance(slug, str) or SEASON_PATTERN.fullmatch(slug) is None:
+            continue
+        try:
+            start, end = season_interval(
+                season, region, f"static-data.seasons[{index}]"
+            )
+        except ValueError:
+            continue
+        valid.append((start, end, season))
+
+    if not valid:
+        raise ValueError(f"no valid main season records for {region}")
+    valid.sort(key=lambda item: (item[0], item[1], str(item[2].get("slug"))))
+    active = [item for item in valid if item[0] <= current < item[1]]
+    if len(active) > 1:
+        raise ValueError(f"multiple active main seasons for {region}")
+
+    ended = [item for item in valid if item[1] <= current]
+    future = [item for item in valid if item[0] > current]
+    previous = max(ended, key=lambda item: item[1]) if ended else None
+    upcoming = min(future, key=lambda item: item[0]) if future else None
+
+    if active:
+        start, _, season = active[0]
+        return SeasonContext(
+            state="active",
+            season=season,
+            previous_season=previous[2] if previous else None,
+            next_season=upcoming[2] if upcoming else None,
+            state_anchor=start,
+        )
+    if upcoming:
+        anchor = previous[1] if previous else upcoming[0]
+        return SeasonContext(
+            state="upcoming",
+            season=upcoming[2],
+            previous_season=previous[2] if previous else None,
+            next_season=upcoming[2],
+            state_anchor=anchor,
+        )
+    if previous:
+        return SeasonContext(
+            state="ended",
+            season=previous[2],
+            previous_season=previous[2],
+            next_season=None,
+            state_anchor=previous[1],
+        )
+    raise ValueError(f"no usable season context for {region}")
+
+
+def season_is_in_grace_period(
+    context: SeasonContext, region: str, now: dt.datetime | None = None
+) -> bool:
+    if context.state != "active":
+        return False
+    starts_at, _ = season_interval(context.season, region)
+    return normalize_now(now) < starts_at + dt.timedelta(days=EMPTY_SEASON_GRACE_DAYS)
 
 
 def select_active_season_record(
@@ -334,6 +496,114 @@ def normalize_colors(raw: dict[str, Any], field: str) -> dict[str, str]:
         if color is not None:
             colors[faction] = color
     return colors
+
+
+def validate_cutoff_identity(
+    payload: dict[str, Any], region: str, expected_season: str | None = None
+) -> dict[str, Any]:
+    cutoffs = payload.get("cutoffs")
+    ui = payload.get("ui")
+    if not isinstance(cutoffs, dict):
+        raise ValueError("response.cutoffs is missing")
+    if not isinstance(ui, dict):
+        raise ValueError("response.ui is missing")
+    ui_region = ui.get("region")
+    if not isinstance(ui_region, str) or ui_region.lower() != region:
+        raise ValueError(f"unexpected response region: {ui_region}")
+    cutoff_region = cutoffs.get("region")
+    if not isinstance(cutoff_region, dict):
+        raise ValueError("response.cutoffs.region is missing")
+    cutoff_region_slug = cutoff_region.get("slug")
+    if not isinstance(cutoff_region_slug, str) or cutoff_region_slug.lower() != region:
+        raise ValueError(f"unexpected cutoff region: {cutoff_region_slug}")
+    season = ui.get("season")
+    if not isinstance(season, str) or SEASON_PATTERN.fullmatch(season) is None:
+        raise ValueError("response.ui.season is invalid")
+    if expected_season is not None and season != expected_season:
+        raise ValueError(
+            f"response season {season} does not match requested {expected_season}"
+        )
+    return cutoffs
+
+
+def classify_cutoff_payload(
+    payload: dict[str, Any] | None,
+    region: str,
+    context: SeasonContext,
+    now: dt.datetime | None = None,
+) -> str:
+    if context.state != "active":
+        raise ValueError("cutoff payloads are only valid for an active season")
+    within_grace = season_is_in_grace_period(context, region, now)
+    if payload is None:
+        if within_grace:
+            return "empty"
+        raise ValueError("season-cutoffs is unavailable after the startup grace period")
+
+    season_slug = context.season.get("slug")
+    if not isinstance(season_slug, str):
+        raise ValueError("active season slug is invalid")
+    cutoffs = validate_cutoff_identity(payload, region, season_slug)
+    nodes = [cutoffs.get(key) for key in REQUIRED_KEYS]
+    missing = [node is None for node in nodes]
+    if all(missing):
+        if within_grace:
+            return "empty"
+        raise ValueError(
+            "all required cutoff nodes are missing after the startup grace period"
+        )
+    if any(missing):
+        raise ValueError("required cutoff nodes are only partially present")
+
+    populations: list[int] = []
+    for key, raw in zip(REQUIRED_KEYS, nodes):
+        if not isinstance(raw, dict):
+            raise ValueError(f"response.cutoffs.{key} is not an object")
+        normalize_colors(raw, f"cutoffs.{key}")
+        for faction in FACTIONS:
+            block = raw.get(faction)
+            field = f"cutoffs.{key}.{faction}"
+            if not isinstance(block, dict):
+                raise ValueError(f"{field} is missing")
+            population = as_int(
+                block.get("totalPopulationCount"),
+                f"{field}.totalPopulationCount",
+            )
+            if population < 0:
+                raise ValueError(f"{field}.population is negative")
+            populations.append(population)
+
+            score_value = block.get("quantileMinValue")
+            if score_value is not None:
+                score = as_number(score_value, f"{field}.quantileMinValue")
+                if score < 0:
+                    raise ValueError(f"{field}.score is negative")
+            rank_value = block.get("quantilePopulationCount")
+            if rank_value is not None:
+                rank = as_int(rank_value, f"{field}.quantilePopulationCount")
+                if rank < 0:
+                    raise ValueError(f"{field}.rank is negative")
+                if rank > population:
+                    raise ValueError(f"{field}.rank exceeds population")
+            fraction_value = block.get("quantilePopulationFraction")
+            if fraction_value is not None:
+                fraction = as_number(
+                    fraction_value, f"{field}.quantilePopulationFraction"
+                )
+                if not 0 <= fraction <= 1:
+                    raise ValueError(
+                        f"{field}.quantilePopulationFraction is out of range"
+                    )
+            if faction == "all" and block.get("quantile") is not None:
+                quantile = as_number(block["quantile"], f"{field}.quantile")
+                if not 0 <= quantile <= 1:
+                    raise ValueError(f"{field}.quantile is out of range")
+
+    if all(population == 0 for population in populations):
+        return "empty"
+    if any(population == 0 for population in populations):
+        raise ValueError("cutoff populations mix zero and positive values")
+    return "ready"
 
 
 def extract_faction(
@@ -567,7 +837,11 @@ def normalize_history(
 
 
 def normalize_season_info(
-    static_payload: dict[str, Any], region: str, season_slug: str
+    static_payload: dict[str, Any],
+    region: str,
+    season_slug: str,
+    *,
+    allow_empty_dungeons: bool = False,
 ) -> dict[str, Any]:
     season = find_season_record(static_payload, season_slug)
     name = season.get("name")
@@ -578,26 +852,18 @@ def normalize_season_info(
     if SEASON_PATTERN.fullmatch(season_slug) is None:
         raise ValueError("static-data season slug is invalid")
 
-    starts = season.get("starts")
-    ends = season.get("ends")
-    if not isinstance(starts, dict) or not isinstance(ends, dict):
-        raise ValueError("static-data season starts/ends are missing")
-    starts_at = parse_timestamp(
-        starts.get(region), f"static-data season starts.{region}"
-    )
-    ends_at = parse_timestamp(ends.get(region), f"static-data season ends.{region}")
-    if starts_at >= ends_at:
-        raise ValueError("static-data season startsAt must be before endsAt")
+    starts_at, ends_at = season_interval(season, region)
 
-    blizzard_season_id = as_int(
-        season.get("blizzard_season_id"), "static-data season blizzard_season_id"
-    )
     is_main_season = season.get("is_main_season")
     if not isinstance(is_main_season, bool):
         raise ValueError("static-data season is_main_season is not boolean")
 
     dungeons = season.get("dungeons")
-    if not isinstance(dungeons, list) or not dungeons:
+    if dungeons is None and allow_empty_dungeons:
+        dungeons = []
+    if not isinstance(dungeons, list):
+        raise ValueError("static-data season dungeons is not a list")
+    if not dungeons and not allow_empty_dungeons:
         raise ValueError("static-data season dungeons must be a non-empty list")
     dungeon_ids: set[int] = set()
     challenge_mode_ids: set[int] = set()
@@ -639,14 +905,23 @@ def normalize_season_info(
         "slug": season_slug,
         "name": name,
         "shortName": short_name,
-        "blizzardSeasonID": blizzard_season_id,
-        "isMainSeason": is_main_season,
-        "startsAt": int(starts_at.timestamp()),
-        "endsAt": int(ends_at.timestamp()),
-        "dungeons": sorted(
-            normalized_dungeons, key=lambda dungeon: dungeon["challengeModeID"]
-        ),
     }
+    raw_blizzard_season_id = season.get("blizzard_season_id")
+    if raw_blizzard_season_id is not None:
+        info["blizzardSeasonID"] = as_int(
+            raw_blizzard_season_id,
+            "static-data season blizzard_season_id",
+        )
+    info.update(
+        {
+            "isMainSeason": is_main_season,
+            "startsAt": int(starts_at.timestamp()),
+            "endsAt": int(ends_at.timestamp()),
+            "dungeons": sorted(
+                normalized_dungeons, key=lambda dungeon: dungeon["challengeModeID"]
+            ),
+        }
+    )
 
     seasonal_affix = season.get("seasonal_affix")
     if seasonal_affix is not None:
@@ -698,12 +973,11 @@ def normalize_bracket_levels(value: Any) -> list[int]:
     return sorted(levels)
 
 
-def normalize(
+def build_ready_region_data(
     payload: dict[str, Any],
     region: str,
-    *,
-    static_payload: dict[str, Any] | None = None,
-    score_tiers_payload: list[Any] | None = None,
+    static_payload: dict[str, Any],
+    score_tiers_payload: list[Any],
 ) -> dict[str, Any]:
     (
         cutoffs,
@@ -715,11 +989,12 @@ def normalize(
     ) = normalize_cutoffs(payload, region)
 
     data: dict[str, Any] = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "dataVersion": parsed_updated_at.strftime("%Y%m%d%H%M"),
         "region": region,
         "available": True,
         "status": "ready",
+        "seasonState": "active",
         "season": season,
         "population": population_by_faction["all"],
         "updatedAt": updated_at,
@@ -727,13 +1002,6 @@ def normalize(
         "sourceURL": "https://raider.io",
         "cutoffs": cutoffs,
     }
-
-    if static_payload is None and score_tiers_payload is None:
-        return data
-    if static_payload is None or score_tiers_payload is None:
-        raise ValueError("Schema Version 2 requires static-data and score-tiers")
-
-    data["schemaVersion"] = 2
     data["populationByFaction"] = population_by_faction
     data["seasonInfo"] = normalize_season_info(static_payload, region, season)
 
@@ -761,6 +1029,143 @@ def normalize(
 
     data["scoreTiers"] = normalize_score_tiers(score_tiers_payload)
     return data
+
+
+def stable_timestamp(value: dt.datetime) -> str:
+    return value.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def build_empty_region_data(
+    region: str,
+    context: SeasonContext,
+    static_payload: dict[str, Any],
+    *,
+    cutoff_payload: dict[str, Any] | None = None,
+    score_tiers_payload: list[Any] | None = None,
+) -> dict[str, Any]:
+    if context.state not in {"active", "upcoming", "ended"}:
+        raise ValueError(f"unsupported season state: {context.state}")
+    season_slug = context.season.get("slug")
+    if not isinstance(season_slug, str) or SEASON_PATTERN.fullmatch(season_slug) is None:
+        raise ValueError("selected season slug is invalid")
+    season_info = normalize_season_info(
+        static_payload,
+        region,
+        season_slug,
+        allow_empty_dungeons=True,
+    )
+
+    status = "collecting" if context.state == "active" else "offseason"
+    updated_at: str
+    version_anchor: dt.datetime
+    if status == "collecting" and cutoff_payload is not None:
+        cutoffs = cutoff_payload.get("cutoffs")
+        raw_updated_at = cutoffs.get("updatedAt") if isinstance(cutoffs, dict) else None
+        if isinstance(raw_updated_at, str) and raw_updated_at.strip():
+            version_anchor = parse_timestamp(
+                raw_updated_at, "response.cutoffs.updatedAt"
+            )
+            updated_at = raw_updated_at
+        else:
+            version_anchor = dt.datetime.fromtimestamp(
+                season_info["startsAt"], dt.timezone.utc
+            )
+            updated_at = stable_timestamp(version_anchor)
+    elif status == "collecting":
+        version_anchor = dt.datetime.fromtimestamp(
+            season_info["startsAt"], dt.timezone.utc
+        )
+        updated_at = stable_timestamp(version_anchor)
+    else:
+        version_anchor = context.state_anchor
+        updated_at = stable_timestamp(version_anchor)
+
+    data: dict[str, Any] = {
+        "schemaVersion": 2,
+        "dataVersion": version_anchor.strftime("%Y%m%d%H%M"),
+        "region": region,
+        "available": False,
+        "status": status,
+        "seasonState": context.state,
+        "season": season_slug,
+        "population": 0,
+        "updatedAt": updated_at,
+        "source": "Raider.IO",
+        "sourceURL": "https://raider.io",
+        "populationByFaction": {"all": 0, "horde": 0, "alliance": 0},
+        "seasonInfo": season_info,
+        "cutoffs": {},
+    }
+    if status == "collecting" and score_tiers_payload is not None:
+        data["scoreTiers"] = normalize_score_tiers(score_tiers_payload)
+    return data
+
+
+def explicit_season_context(
+    static_payload: dict[str, Any], region: str, season_slug: str
+) -> SeasonContext:
+    season = find_season_record(static_payload, season_slug)
+    starts_at, _ = season_interval(season, region)
+    return SeasonContext(
+        state="active",
+        season=season,
+        previous_season=None,
+        next_season=None,
+        state_anchor=starts_at,
+    )
+
+
+def normalize(
+    payload: dict[str, Any],
+    region: str,
+    *,
+    static_payload: dict[str, Any] | None = None,
+    score_tiers_payload: list[Any] | None = None,
+    season_context: SeasonContext | None = None,
+    now: dt.datetime | None = None,
+) -> dict[str, Any]:
+    if static_payload is None and score_tiers_payload is None:
+        (
+            cutoffs,
+            population_by_faction,
+            season,
+            updated_at,
+            parsed_updated_at,
+            _,
+        ) = normalize_cutoffs(payload, region)
+        return {
+            "schemaVersion": 1,
+            "dataVersion": parsed_updated_at.strftime("%Y%m%d%H%M"),
+            "region": region,
+            "available": True,
+            "status": "ready",
+            "season": season,
+            "population": population_by_faction["all"],
+            "updatedAt": updated_at,
+            "source": "Raider.IO",
+            "sourceURL": "https://raider.io",
+            "cutoffs": cutoffs,
+        }
+    if static_payload is None:
+        raise ValueError("Schema Version 2 requires static-data")
+
+    context = season_context or resolve_season_context(static_payload, region, now)
+    if context.state != "active":
+        return build_empty_region_data(region, context, static_payload)
+    classification = classify_cutoff_payload(payload, region, context, now)
+    if classification == "empty":
+        return build_empty_region_data(
+            region,
+            context,
+            static_payload,
+            cutoff_payload=payload,
+            score_tiers_payload=score_tiers_payload,
+        )
+    if score_tiers_payload is None:
+        raise ValueError("ready Schema Version 2 data requires score-tiers")
+    return build_ready_region_data(
+        payload, region, static_payload, score_tiers_payload
+    )
 
 
 def lua_string(value: str) -> str:
@@ -856,6 +1261,37 @@ def prepare_toc_content(
     return new
 
 
+def write_region_data(
+    region: str,
+    data: dict[str, Any],
+    *,
+    output: str | pathlib.Path | None = None,
+    toc: str | pathlib.Path | None = None,
+) -> dict[str, Any]:
+    output_path = pathlib.Path(output) if output else data_path(region)
+    toc_file = pathlib.Path(toc) if toc else toc_path(region)
+    rendered_data = render_lua(data)
+    rendered_toc = prepare_toc_content(
+        toc_file, data["dataVersion"], data["schemaVersion"]
+    )
+    data_changed = atomic_write(output_path, rendered_data)
+    toc_changed = atomic_write(toc_file, rendered_toc)
+    return {
+        "success": True,
+        "region": region,
+        "schemaVersion": data["schemaVersion"],
+        "season": data["season"],
+        "status": data["status"],
+        "seasonState": data.get("seasonState"),
+        "available": data["available"],
+        "updatedAt": data["updatedAt"],
+        "dataVersion": data["dataVersion"],
+        "population": data["population"],
+        "dataChanged": data_changed,
+        "tocChanged": toc_changed,
+    }
+
+
 def update_region(
     region: str,
     *,
@@ -879,6 +1315,7 @@ def update_region(
         )
 
     resolved_season = season
+    context: SeasonContext | None = None
     if input_json:
         payload = load_json(input_json, dict, "season-cutoffs input")
         if static_input_json:
@@ -886,50 +1323,69 @@ def update_region(
             score_tiers_payload = load_json(
                 score_tiers_input_json, list, "score-tiers input"
             )
+            context = (
+                explicit_season_context(static_payload, region, resolved_season)
+                if resolved_season
+                else resolve_season_context(static_payload, region)
+            )
+        data = normalize(
+            payload,
+            region,
+            static_payload=static_payload,
+            score_tiers_payload=score_tiers_payload,
+            season_context=context,
+        )
     else:
         static_payload = static_payload or fetch_static_data(
             expansion_id, access_key, timeout
         )
-        if not resolved_season:
-            resolved_season = select_active_season(static_payload, region)
-        if SEASON_PATTERN.fullmatch(resolved_season) is None:
-            raise ValueError(f"invalid season slug: {resolved_season}")
-        score_tiers_payload = score_tiers_payload or fetch_score_tiers(
-            resolved_season, access_key, timeout
-        )
-        payload = fetch_cutoff_payload(region, resolved_season, access_key, timeout)
+        if resolved_season:
+            if SEASON_PATTERN.fullmatch(resolved_season) is None:
+                raise ValueError(f"invalid season slug: {resolved_season}")
+            context = explicit_season_context(
+                static_payload, region, resolved_season
+            )
+        else:
+            context = resolve_season_context(static_payload, region)
+            resolved_season = str(context.season.get("slug", ""))
 
-    data = normalize(
-        payload,
-        region,
-        static_payload=static_payload,
-        score_tiers_payload=score_tiers_payload,
-    )
+        if context.state != "active":
+            data = build_empty_region_data(region, context, static_payload)
+        else:
+            allow_not_ready = season_is_in_grace_period(context, region)
+            payload = fetch_cutoff_payload(
+                region,
+                resolved_season,
+                access_key,
+                timeout,
+                allow_not_ready=allow_not_ready,
+            )
+            classification = classify_cutoff_payload(
+                payload, region, context
+            )
+            if classification == "ready":
+                score_tiers_payload = score_tiers_payload or fetch_score_tiers(
+                    resolved_season, access_key, timeout
+                )
+                data = build_ready_region_data(
+                    payload,
+                    region,
+                    static_payload,
+                    score_tiers_payload,
+                )
+            else:
+                data = build_empty_region_data(
+                    region,
+                    context,
+                    static_payload,
+                    cutoff_payload=payload,
+                    score_tiers_payload=score_tiers_payload,
+                )
     if resolved_season and data["season"] != resolved_season:
         raise ValueError(
             f"response season {data['season']} does not match requested {resolved_season}"
         )
-
-    output_path = pathlib.Path(output) if output else data_path(region)
-    toc_file = pathlib.Path(toc) if toc else toc_path(region)
-    rendered_data = render_lua(data)
-    rendered_toc = prepare_toc_content(
-        toc_file, data["dataVersion"], data["schemaVersion"]
-    )
-
-    data_changed = atomic_write(output_path, rendered_data)
-    toc_changed = atomic_write(toc_file, rendered_toc)
-    return {
-        "success": True,
-        "region": region,
-        "schemaVersion": data["schemaVersion"],
-        "season": data["season"],
-        "updatedAt": data["updatedAt"],
-        "dataVersion": data["dataVersion"],
-        "population": data["population"],
-        "dataChanged": data_changed,
-        "tocChanged": toc_changed,
-    }
+    return write_region_data(region, data, output=output, toc=toc)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -130,8 +130,11 @@ end
 function API:IsRegionAvailable(region)
     region = NormalizeRegion(region)
     local data = region and self.regions[region]
+    local statusReady = type(data) == "table"
+        and (data.status == nil or data.status == "ready")
     return type(data) == "table"
         and data.available == true
+        and statusReady
         and type(data.cutoffs) == "table"
         and next(data.cutoffs) ~= nil
 end
@@ -157,6 +160,7 @@ function API:GetMetadata(region)
         population = data.population,
         dataVersion = data.dataVersion,
         status = data.status,
+        seasonState = data.seasonState,
         schemaVersion = data.schemaVersion,
         populationByFaction = data.populationByFaction,
         isRemappedSeason = data.isRemappedSeason,
@@ -290,7 +294,7 @@ function API:EstimateRank(region, score, faction)
     end
 
     local data = self:GetRegionData(region)
-    if not data or data.available ~= true then
+    if not data or not self:IsRegionAvailable(region) then
         return nil, "region data unavailable"
     end
 

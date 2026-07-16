@@ -42,6 +42,9 @@ def _data(region_key: str, **changes: str) -> str:
         "register": region_key,
         "data_version": publish.DATA_VERSION,
         "region": region_key,
+        "season": "season-mn-1",
+        "status": "ready",
+        "season_state": "active",
     }
     values.update(changes)
     return (
@@ -49,6 +52,9 @@ def _data(region_key: str, **changes: str) -> str:
         f'API:RegisterRegion("{values["register"]}", {{\n'
         f'    dataVersion = "{values["data_version"]}",\n'
         f'    region = "{values["region"]}",\n'
+        f'    season = "{values["season"]}",\n'
+        f'    status = "{values["status"]}",\n'
+        f'    seasonState = "{values["season_state"]}",\n'
         "})\n"
     )
 
@@ -124,10 +130,76 @@ def test_validates_exact_five_packages_in_required_order(tmp_path: pathlib.Path)
     assert all(p.version == publish.VERSION for p in packages)
 
 
+def test_validates_artifact_with_only_one_selected_region(
+    tmp_path: pathlib.Path,
+) -> None:
+    artifact = tmp_path / "artifact"
+    artifact.mkdir()
+    _write_package(artifact, "cn")
+    changelog = tmp_path / "changelog.md"
+    changelog.write_text(publish.EXPECTED_CHANGELOG, encoding="utf-8")
+    packages = publish.validate_artifact(artifact, changelog, regions=["cn"])
+    assert [package.region for package in packages] == ["cn"]
+
+
+def test_validates_independent_versions_seasons_and_statuses(
+    tmp_path: pathlib.Path,
+) -> None:
+    artifact = tmp_path / "artifact"
+    artifact.mkdir()
+    for index, region in enumerate(publish.REGION_ORDER):
+        data_version = f"2026071702{index:02d}"
+        version = f"2.0.{data_version}"
+        status = "ready"
+        season_state = "active"
+        season = "season-mn-1"
+        if region == "cn":
+            status = "collecting"
+            season = "season-mn-2"
+        elif region == "eu":
+            status = "offseason"
+            season_state = "ended"
+        _write_package(
+            artifact,
+            region,
+            filename=f"{REGIONS[region]['addon']}-{version}.zip",
+            toc=_toc(region, version=version),
+            data=_data(
+                region,
+                data_version=data_version,
+                season=season,
+                status=status,
+                season_state=season_state,
+            ),
+        )
+    changelog = tmp_path / "changelog.md"
+    changelog.write_text(publish.EXPECTED_CHANGELOG, encoding="utf-8")
+    packages = publish.validate_artifact(artifact, changelog)
+    assert len({package.version for package in packages}) == 5
+    assert packages[0].status == "collecting"
+    assert packages[2].status == "offseason"
+
+
+def test_one_region_version_mismatch_is_not_hidden_by_other_regions(
+    tmp_path: pathlib.Path,
+) -> None:
+    artifact, changelog = _artifact(tmp_path)
+    cn = next(artifact.glob("*CN*.zip"))
+    cn.unlink()
+    _write_package(
+        artifact,
+        "cn",
+        filename=f"{REGIONS['cn']['addon']}-2.0.202607150800.zip",
+        toc=_toc("cn", version="2.0.202607150800"),
+    )
+    with pytest.raises(publish.PublishError, match="dataVersion does not match"):
+        publish.validate_artifact(artifact, changelog)
+
+
 def test_missing_zip_fails_whole_validation(tmp_path: pathlib.Path) -> None:
     artifact, changelog = _artifact(tmp_path)
     next(artifact.glob("*CN*.zip")).unlink()
-    with pytest.raises(publish.PublishError, match="exactly the five"):
+    with pytest.raises(publish.PublishError, match="exactly one package ZIP"):
         publish.validate_artifact(artifact, changelog)
 
 
@@ -135,7 +207,7 @@ def test_missing_zip_fails_whole_validation(tmp_path: pathlib.Path) -> None:
 def test_extra_file_fails_validation(tmp_path: pathlib.Path, extra_name: str) -> None:
     artifact, changelog = _artifact(tmp_path)
     (artifact / extra_name).write_text("extra", encoding="utf-8")
-    with pytest.raises(publish.PublishError, match="exactly the five"):
+    with pytest.raises(publish.PublishError, match="selected regional ZIP"):
         publish.validate_artifact(artifact, changelog)
 
 
@@ -143,7 +215,7 @@ def test_wrong_zip_filename_fails_validation(tmp_path: pathlib.Path) -> None:
     artifact, changelog = _artifact(tmp_path)
     source = next(artifact.glob("*CN*.zip"))
     source.rename(artifact / "QFXMythicRankData_CN-wrong.zip")
-    with pytest.raises(publish.PublishError, match="exactly the five"):
+    with pytest.raises(publish.PublishError, match="unexpected ZIP filename"):
         publish.validate_artifact(artifact, changelog)
 
 
@@ -302,7 +374,7 @@ def test_invalid_package_prevents_token_read_and_http(
     def forbidden(*args: object) -> publish.HttpResult:
         raise AssertionError("HTTP must not run")
 
-    with pytest.raises(publish.PublishError, match="exactly the five"):
+    with pytest.raises(publish.PublishError, match="exactly one package ZIP"):
         publish.execute(artifact, "upload", "release", changelog, request=forbidden)
 
 

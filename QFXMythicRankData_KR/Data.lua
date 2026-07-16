@@ -14,6 +14,7 @@ API:RegisterRegion("kr", {
     region = "kr",
     available = true,
     status = "ready",
+    seasonState = "active",
     season = "season-mn-1",
     population = 111323,
     updatedAt = "Thu Jul 16 2026 14:50:45 GMT+0000 (Coordinated Universal Time)",
