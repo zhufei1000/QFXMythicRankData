@@ -4,6 +4,8 @@
     "region": {"slug": "cn"},
     "p999": {
       "allColor": "#ff8000",
+      "hordeColor": "#f06b5b",
+      "allianceColor": "#fc7a2c",
       "all": {"quantile": 0.999, "quantileMinValue": 4200.5, "quantilePopulationCount": 1200, "quantilePopulationFraction": 0.001, "totalPopulationCount": 1200000},
       "horde": {"quantile": 0.999, "quantileMinValue": 4190.1, "quantilePopulationCount": 650, "quantilePopulationFraction": 0.001, "totalPopulationCount": 650000},
       "alliance": {"quantile": 0.999, "quantileMinValue": 4210.2, "quantilePopulationCount": 550, "quantilePopulationFraction": 0.001, "totalPopulationCount": 550000}
@@ -31,7 +33,58 @@
       "all": {"quantile": 0.6, "quantileMinValue": 2700.0, "quantilePopulationCount": 480000, "quantilePopulationFraction": 0.4, "totalPopulationCount": 1200000},
       "horde": {"quantile": 0.6, "quantileMinValue": 2680.0, "quantilePopulationCount": 260000, "quantilePopulationFraction": 0.4, "totalPopulationCount": 650000},
       "alliance": {"quantile": 0.6, "quantileMinValue": 2720.0, "quantilePopulationCount": 220000, "quantilePopulationFraction": 0.4, "totalPopulationCount": 550000}
-    }
+    },
+    "keystoneLegend": {
+      "score": 3000,
+      "allColor": "#ff8000",
+      "hordeColor": "#ff8100",
+      "allianceColor": "#ff8200",
+      "all": {"quantile": 0.8, "quantileMinValue": 3000, "quantilePopulationCount": 240000, "quantilePopulationFraction": 0.2, "totalPopulationCount": 1200000},
+      "horde": {"quantile": 0.8, "quantileMinValue": 3000, "quantilePopulationCount": 130000, "quantilePopulationFraction": 0.2, "totalPopulationCount": 650000},
+      "alliance": {"quantile": 0.8, "quantileMinValue": 3000, "quantilePopulationCount": 110000, "quantilePopulationFraction": 0.2, "totalPopulationCount": 550000}
+    },
+    "keystoneHero": {
+      "score": 2500,
+      "allColor": "#a335ee",
+      "all": {"quantile": 0.6, "quantileMinValue": 2500, "quantilePopulationCount": 480000, "quantilePopulationFraction": 0.4, "totalPopulationCount": 1200000},
+      "horde": {"quantile": 0.6, "quantileMinValue": 2500, "quantilePopulationCount": 260000, "quantilePopulationFraction": 0.4, "totalPopulationCount": 650000},
+      "alliance": {"quantile": 0.6, "quantileMinValue": 2500, "quantilePopulationCount": 220000, "quantilePopulationFraction": 0.4, "totalPopulationCount": 550000}
+    },
+    "keystoneMaster": {
+      "score": 2000,
+      "allColor": "#0070dd",
+      "all": {"quantile": 0.4, "quantileMinValue": 2000, "quantilePopulationCount": 720000, "quantilePopulationFraction": 0.6, "totalPopulationCount": 1200000},
+      "horde": {"quantile": 0.4, "quantileMinValue": 2000, "quantilePopulationCount": 390000, "quantilePopulationFraction": 0.6, "totalPopulationCount": 650000},
+      "alliance": {"quantile": 0.4, "quantileMinValue": 2000, "quantilePopulationCount": 330000, "quantilePopulationFraction": 0.6, "totalPopulationCount": 550000}
+    },
+    "keystoneConqueror": {
+      "score": 1500,
+      "allColor": "#1eff00",
+      "all": {"quantile": 0.2, "quantileMinValue": 1500, "quantilePopulationCount": 960000, "quantilePopulationFraction": 0.8, "totalPopulationCount": 1200000},
+      "horde": {"quantile": 0.2, "quantileMinValue": 1500, "quantilePopulationCount": 520000, "quantilePopulationFraction": 0.8, "totalPopulationCount": 650000},
+      "alliance": {"quantile": 0.2, "quantileMinValue": 1500, "quantilePopulationCount": 440000, "quantilePopulationFraction": 0.8, "totalPopulationCount": 550000}
+    },
+    "keystoneExplorer": {
+      "score": 1000,
+      "allColor": "#ffffff",
+      "all": {"quantile": 0, "quantileMinValue": 1000, "quantilePopulationCount": 0, "quantilePopulationFraction": 0, "totalPopulationCount": 1200000},
+      "horde": {"quantile": 0, "quantileMinValue": 1000, "quantilePopulationCount": 0, "quantilePopulationFraction": 0, "totalPopulationCount": 650000},
+      "alliance": {"quantile": 0, "quantileMinValue": 1000, "quantilePopulationCount": 0, "quantilePopulationFraction": 0, "totalPopulationCount": 550000}
+    },
+    "graphData": {
+      "p999": {"type": "spline", "name": "Top 0.1%", "data": [
+        {"x": 1781399400000, "y": 4100, "total": 1100},
+        {"x": 1781485800000, "y": 4110, "total": 1110},
+        {"x": 1784077800000, "y": 4200.5, "total": 1200},
+        {"x": 1784077800000, "y": 9999, "total": 9999}
+      ]},
+      "p990": {"type": "spline", "name": "Top 1%", "data": [{"x": 1784077800000, "y": 3900, "total": 12000}]},
+      "p900": {"type": "spline", "name": "Top 10%", "data": [{"x": 1784077800000, "y": 3400, "total": 120000}]},
+      "p750": {"type": "spline", "name": "Top 25%", "data": [{"x": 1784077800000, "y": 3000, "total": 300000}]},
+      "p600": {"type": "spline", "name": "Top 40%", "data": [{"x": 1784077800000, "y": 2700, "total": 480000}]}
+    },
+    "bracketDungeonLevels": [12, 2, 7, 4, 12, 10],
+    "isRemappedSeason": true
   },
   "ui": {"season": "season-mn-1", "region": "cn"}
 }

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Validate and build installable ZIP archives for every regional addon."""
+"""Validate and build independently versioned regional addon ZIP archives."""
 
 from __future__ import annotations
 
+import argparse
 import json
 import pathlib
 import re
@@ -14,11 +15,12 @@ SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from region_config import REGIONS, ROOT
+from region_config import REGIONS, ROOT, SUPPORTED_REGIONS
 
 
 DIST = ROOT / "dist"
 REQUIRED_ADDON_FILES = ("Core.lua", "Data.lua")
+ALLOWED_STATUSES = {"ready", "collecting", "offseason"}
 
 
 def _one_match(pattern: str, text: str, field: str) -> str:
@@ -26,6 +28,10 @@ def _one_match(pattern: str, text: str, field: str) -> str:
     if len(matches) != 1:
         raise ValueError(f"expected exactly one {field}, found {len(matches)}")
     return matches[0]
+
+
+def _top_level_value(name: str, pattern: str, text: str) -> str:
+    return _one_match(rf"^ {{4}}{re.escape(name)}\s*=\s*{pattern}\s*,", text, name)
 
 
 def validate_addon(region: str, config: dict[str, Any]) -> dict[str, Any]:
@@ -43,18 +49,16 @@ def validate_addon(region: str, config: dict[str, Any]) -> dict[str, Any]:
     registered_region = _one_match(
         r'API:RegisterRegion\("([a-z]+)"\s*,', data_text, "registered region"
     )
-    data_region = _one_match(
-        r'^\s*region\s*=\s*"([a-z]+)"\s*,', data_text, "data region"
-    )
-    data_version = _one_match(
-        r'^\s*dataVersion\s*=\s*"([0-9]{12})"\s*,', data_text, "dataVersion"
-    )
-    status = _one_match(
-        r'^\s*status\s*=\s*"([^"]+)"\s*,', data_text, "status"
-    )
-    available = _one_match(
-        r'^\s*available\s*=\s*(true|false)\s*,', data_text, "available"
-    )
+    schema_version = int(_top_level_value("schemaVersion", r"([0-9]+)", data_text))
+    data_region = _top_level_value("region", r'"([a-z]+)"', data_text)
+    data_version = _top_level_value("dataVersion", r'"([0-9]{12})"', data_text)
+    status = _top_level_value("status", r'"([^\"]+)"', data_text)
+    season_state = _top_level_value("seasonState", r'"([^\"]+)"', data_text)
+    available = _top_level_value("available", r"(true|false)", data_text)
+    population = int(_top_level_value("population", r"([0-9]+)", data_text))
+    cutoffs_empty = re.search(
+        r"^ {4}cutoffs\s*=\s*\{\s*\}\s*,", data_text, flags=re.MULTILINE
+    ) is not None
     toc_version = _one_match(r"^## Version:\s*(\S+)\s*$", toc_text, "TOC Version")
     project_id = int(
         _one_match(
@@ -66,9 +70,33 @@ def validate_addon(region: str, config: dict[str, Any]) -> dict[str, Any]:
 
     if registered_region != region or data_region != region:
         raise ValueError(f"{addon} contains data for the wrong region")
-    if available != "true" or status != "ready":
-        raise ValueError(f"{addon} does not contain ready production data")
-    expected_version = f"1.0.{data_version}"
+    if schema_version != 2:
+        raise ValueError(f"{addon} must use Schema Version 2")
+    if status not in ALLOWED_STATUSES:
+        raise ValueError(f"{addon} contains unsupported status {status!r}")
+    if status == "ready" and not (
+        available == "true"
+        and population > 0
+        and not cutoffs_empty
+        and season_state == "active"
+    ):
+        raise ValueError(f"{addon} has inconsistent ready state")
+    if status == "collecting" and not (
+        available == "false"
+        and population == 0
+        and cutoffs_empty
+        and season_state == "active"
+    ):
+        raise ValueError(f"{addon} has inconsistent collecting state")
+    if status == "offseason" and not (
+        available == "false"
+        and population == 0
+        and cutoffs_empty
+        and season_state in {"upcoming", "ended"}
+    ):
+        raise ValueError(f"{addon} has inconsistent offseason state")
+
+    expected_version = f"2.0.{data_version}"
     if toc_version != expected_version:
         raise ValueError(
             f"{addon} TOC Version {toc_version} does not match {expected_version}"
@@ -88,21 +116,28 @@ def validate_addon(region: str, config: dict[str, Any]) -> dict[str, Any]:
         "region": region,
         "addon": addon,
         "version": toc_version,
+        "dataVersion": data_version,
+        "status": status,
+        "seasonState": season_state,
         "curseforge_project_id": project_id,
         "files": [core, data, toc],
     }
 
 
-def build_packages(output_dir: pathlib.Path = DIST) -> list[dict[str, Any]]:
+def build_packages(
+    output_dir: pathlib.Path = DIST,
+    regions: list[str] | tuple[str, ...] | None = None,
+) -> list[dict[str, Any]]:
+    selected = list(regions or SUPPORTED_REGIONS)
     output_dir.mkdir(parents=True, exist_ok=True)
+    for stale in output_dir.glob("*.zip"):
+        stale.unlink()
     packages: list[dict[str, Any]] = []
 
-    for region, config in REGIONS.items():
+    for region in selected:
+        config = REGIONS[region]
         validated = validate_addon(region, config)
         addon = validated["addon"]
-        for stale in output_dir.glob(f"{addon}-*.zip"):
-            stale.unlink()
-
         archive = output_dir / f"{addon}-{validated['version']}.zip"
         with zipfile.ZipFile(
             archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
@@ -127,17 +162,27 @@ def build_packages(output_dir: pathlib.Path = DIST) -> list[dict[str, Any]]:
                 "region": region,
                 "file": archive.name,
                 "version": validated["version"],
+                "dataVersion": validated["dataVersion"],
+                "status": validated["status"],
+                "seasonState": validated["seasonState"],
                 "curseforge_project_id": validated["curseforge_project_id"],
                 "size": archive.stat().st_size,
             }
         )
-
     return packages
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--regions",
+        nargs="+",
+        choices=SUPPORTED_REGIONS,
+        default=list(SUPPORTED_REGIONS),
+    )
+    args = parser.parse_args(argv)
     try:
-        packages = build_packages()
+        packages = build_packages(regions=args.regions)
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

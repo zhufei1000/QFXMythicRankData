@@ -15,6 +15,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import build_packages
+import update_region_data as updater
 from region_config import REGIONS
 
 EXPECTED_PROJECT_IDS = {
@@ -88,6 +89,135 @@ def test_packages_exclude_development_files(tmp_path: pathlib.Path) -> None:
         with zipfile.ZipFile(tmp_path / package["file"]) as bundle:
             for name in bundle.namelist():
                 assert not any(item in name for item in forbidden)
+
+
+@pytest.mark.parametrize(
+    ("selected", "expected"),
+    [
+        (["cn"], ["cn"]),
+        (["us", "eu"], ["us", "eu"]),
+        (["cn", "us", "eu", "tw", "kr"], ["cn", "us", "eu", "tw", "kr"]),
+    ],
+)
+def test_builds_only_selected_regions(
+    tmp_path: pathlib.Path, selected: list[str], expected: list[str]
+) -> None:
+    packages = build_packages.build_packages(tmp_path, regions=selected)
+    assert [package["region"] for package in packages] == expected
+    assert sorted(path.name for path in tmp_path.glob("*.zip")) == sorted(
+        package["file"] for package in packages
+    )
+
+
+def _write_state_data(
+    root: pathlib.Path,
+    region: str,
+    status: str,
+    season_state: str,
+    available: bool,
+    population: int,
+    cutoffs: dict,
+    data_version: str = "202607170100",
+) -> None:
+    config = REGIONS[region]
+    addon = config["addon"]
+    directory = root / addon
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "Core.lua").write_text("return true\n", encoding="utf-8")
+    data = {
+        "schemaVersion": 2,
+        "dataVersion": data_version,
+        "region": region,
+        "available": available,
+        "status": status,
+        "seasonState": season_state,
+        "season": "season-mn-1",
+        "population": population,
+        "cutoffs": cutoffs,
+    }
+    (directory / "Data.lua").write_text(updater.render_lua(data), encoding="utf-8")
+    (directory / f"{addon}.toc").write_text(
+        "## Interface: 120000\n"
+        f"## Version: 2.0.{data_version}\n"
+        f"## X-Curse-Project-ID: {config['curseforge_project_id']}\n"
+        f"## X-Data-Region: {config['region_upper']}\n"
+        "Core.lua\nData.lua\n",
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "season_state", "available", "population", "cutoffs"),
+    [
+        ("ready", "active", True, 100, {"p999": {"all": {"score": 4000}}}),
+        ("collecting", "active", False, 0, {}),
+        ("offseason", "upcoming", False, 0, {}),
+        ("offseason", "ended", False, 0, {}),
+    ],
+)
+def test_build_validation_accepts_consistent_states(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+    season_state: str,
+    available: bool,
+    population: int,
+    cutoffs: dict,
+) -> None:
+    _write_state_data(
+        tmp_path, "cn", status, season_state, available, population, cutoffs
+    )
+    monkeypatch.setattr(build_packages, "ROOT", tmp_path)
+    validated = build_packages.validate_addon("cn", REGIONS["cn"])
+    assert validated["status"] == status
+
+
+@pytest.mark.parametrize(
+    ("status", "season_state", "available", "population", "cutoffs", "message"),
+    [
+        ("offseason", "ended", True, 0, {}, "offseason"),
+        ("ready", "active", True, 0, {}, "ready"),
+        ("collecting", "active", False, 0, {"p999": {}}, "collecting"),
+        ("ready", "upcoming", True, 100, {"p999": {}}, "ready"),
+    ],
+)
+def test_build_validation_rejects_inconsistent_states(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+    season_state: str,
+    available: bool,
+    population: int,
+    cutoffs: dict,
+    message: str,
+) -> None:
+    _write_state_data(
+        tmp_path, "cn", status, season_state, available, population, cutoffs
+    )
+    monkeypatch.setattr(build_packages, "ROOT", tmp_path)
+    with pytest.raises(ValueError, match=message):
+        build_packages.validate_addon("cn", REGIONS["cn"])
+
+
+def test_five_regions_can_build_with_independent_versions(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source"
+    output = tmp_path / "dist"
+    for index, region in enumerate(REGIONS):
+        _write_state_data(
+            source,
+            region,
+            "ready",
+            "active",
+            True,
+            100,
+            {"p999": {"all": {"score": 4000}}},
+            data_version=f"2026071701{index:02d}",
+        )
+    monkeypatch.setattr(build_packages, "ROOT", source)
+    packages = build_packages.build_packages(output)
+    assert len({package["version"] for package in packages}) == 5
 
 
 def _copy_addon(region: str, destination: pathlib.Path) -> dict:

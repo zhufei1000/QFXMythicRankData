@@ -14,7 +14,27 @@ The addons contain no display UI, frames, events, timers, `OnUpdate` handlers, s
 
 ## Data and attribution
 
-Data comes from the public [Raider.IO](https://raider.io) Mythic+ `static-data` and `season-cutoffs` API endpoints. The updater selects the active main season independently for each region, validates the complete response, and atomically replaces only that region's known-good data.
+Data comes from the public [Raider.IO](https://raider.io) Mythic+ `static-data`, `season-cutoffs`, and `score-tiers` API endpoints. The updater selects the active main season independently for each region, validates the complete response, and atomically replaces only that region's known-good data.
+
+Each region has an independent database state:
+
+- `ready` / `active`: validated positive population and cutoff data are available.
+- `collecting` / `active`: the season is active but Raider.IO has not formed valid cutoff data yet; population is `0` and `cutoffs` is empty.
+- `offseason` / `upcoming|ended`: no season is active; the nearest upcoming or most recently ended season metadata is retained with stable zero-population data.
+
+Completely missing cutoff nodes are accepted as `collecting` only during the first 14 days of an active season. Partial nodes, mixed zero/positive populations, malformed numbers, retryable server errors, and late missing data remain hard failures and never overwrite the last known-good regional files.
+
+Schema Version 2 stores normalized source data for:
+
+- the five percentile score cutoffs (`p999`, `p990`, `p900`, `p750`, and `p600`)
+- Mythic+ achievement score cutoffs
+- Raider.IO's source history points from the most recent 30 days
+- all-faction, Horde, and Alliance regional populations and cutoff colors
+- the current season's start/end times and dungeon pool
+- source-provided keystone bracket levels and season remapping status
+- Raider.IO score color tiers
+
+The packages contain no player names, realms, full leaderboard, dungeon-run members, equipment, talents, class statistics, or current affix schedule. Historical points are stored exactly as normalized source points: the database does not calculate daily changes, faction ratios, cross-region comparisons, or display results.
 
 Rank results are estimates derived from published percentile score cutoffs. They are not exact character leaderboard positions and should always be presented as estimates.
 
@@ -46,8 +66,15 @@ The compatible API methods are:
 - `IsRegionAvailable(region)`
 - `GetCurrentRegion()`
 - `GetMetadata(region)`
+- `GetPopulation(region, faction)`
+- `GetSeasonInfo(region)`
+- `GetSeasonDungeons(region)`
 - `GetCutoff(region, key, faction)`
 - `GetCutoffs(region, faction)`
+- `GetAchievementCutoff(region, key, faction)`
+- `GetCutoffHistory(region, key)`
+- `GetScoreTiers(region)`
+- `GetBracketDungeonLevels(region)`
 - `GetPlayerScore()`
 - `EstimateRank(region, score, faction)`
 - `EstimatePlayerRank(region, faction)`
@@ -74,6 +101,8 @@ python scripts/update_all_regions.py
 python scripts/build_packages.py
 ```
 
+Build only selected regional packages with `--regions`, for example `python scripts/build_packages.py --regions cn`.
+
 The original CN command remains compatible:
 
 ```bash
@@ -86,6 +115,6 @@ python scripts/update_cn_data.py
 
 ## Automation and packages
 
-The `Update Regional Mythic Rank Data` GitHub Actions workflow runs daily at 09:17 China Standard Time and can be started manually. It tests the shared API under Lua 5.1, updates all five regions, creates at most one data commit, and builds five installable ZIP archives.
+The `Update Regional Mythic Rank Data` GitHub Actions workflow runs twice daily at 09:17 and 21:17 China Standard Time and can be started manually. A normal same-season update makes about seven Raider.IO requests: one `static-data`, one shared `score-tiers`, and five regional `season-cutoffs` requests. A full offseason run makes only the single `static-data` request, while collecting-only seasons skip `score-tiers`.
 
-The archives are uploaded as the `QFXMythicRankData-packages` Actions Artifact and retained for 5 days. CurseForge, GitHub Release, and Wago publishing are not automated at this stage.
+Only regions with publishable changes are built, included in the Artifact, and passed to the validated CurseForge publishing step. Regional packages may have different seasons, states, data versions, and ZIP versions. The separate read-only `Validate Pull Request` workflow always runs tests, Lua 5.1 validation, and a five-package build without contacting Raider.IO or CurseForge.

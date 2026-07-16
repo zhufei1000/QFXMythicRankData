@@ -1,0 +1,52 @@
+name: Validate Pull Request
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: python -m pip install --requirement requirements.txt
+
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lua5.1
+
+      - name: Verify shared Core.lua synchronization
+        run: python scripts/sync_core.py --check
+
+      - name: Run test suite
+        env:
+          LUA51: /usr/bin/lua5.1
+        run: python -m pytest -v
+
+      - name: Validate Lua 5.1 syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          luac5.1 -p shared/Core.lua
+          for region in CN US EU TW KR; do
+            luac5.1 -p "QFXMythicRankData_${region}/Core.lua"
+            luac5.1 -p "QFXMythicRankData_${region}/Data.lua"
+          done
+
+      - name: Build all regional packages
+        run: python scripts/build_packages.py
