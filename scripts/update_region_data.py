@@ -325,15 +325,11 @@ def resolve_season_context(
     for index, season in enumerate(seasons):
         if not isinstance(season, dict) or season.get("is_main_season") is not True:
             continue
+        field = f"static-data.seasons[{index}]"
         slug = season.get("slug")
         if not isinstance(slug, str) or SEASON_PATTERN.fullmatch(slug) is None:
-            continue
-        try:
-            start, end = season_interval(
-                season, region, f"static-data.seasons[{index}]"
-            )
-        except ValueError:
-            continue
+            raise ValueError(f"{field}.slug is invalid")
+        start, end = season_interval(season, region, field)
         valid.append((start, end, season))
 
     if not valid:
@@ -526,6 +522,49 @@ def validate_cutoff_identity(
     return cutoffs
 
 
+def is_zero_or_none(value: Any, field: str) -> None:
+    if value is None:
+        return
+    if as_number(value, field) != 0:
+        raise ValueError(f"{field} must be zero or null when population is zero")
+
+
+def validate_zero_population_cutoffs(cutoffs: dict[str, Any]) -> None:
+    for key in REQUIRED_KEYS:
+        raw = cutoffs.get(key)
+        if not isinstance(raw, dict):
+            raise ValueError(f"response.cutoffs.{key} is missing")
+
+        normalize_colors(raw, f"cutoffs.{key}")
+        for faction in FACTIONS:
+            block = raw.get(faction)
+            field = f"cutoffs.{key}.{faction}"
+            if not isinstance(block, dict):
+                raise ValueError(f"{field} is missing")
+
+            population = as_int(
+                block.get("totalPopulationCount"),
+                f"{field}.totalPopulationCount",
+            )
+            if population != 0:
+                raise ValueError(f"{field}.totalPopulationCount must be zero")
+
+            for name in (
+                "quantileMinValue",
+                "quantilePopulationCount",
+                "quantilePopulationFraction",
+            ):
+                is_zero_or_none(block.get(name), f"{field}.{name}")
+
+        all_block = raw["all"]
+        quantile = as_number(
+            all_block.get("quantile"),
+            f"cutoffs.{key}.all.quantile",
+        )
+        if not 0 <= quantile <= 1:
+            raise ValueError(f"cutoffs.{key}.all.quantile is out of range")
+
+
 def classify_cutoff_payload(
     payload: dict[str, Any] | None,
     region: str,
@@ -559,7 +598,6 @@ def classify_cutoff_payload(
     for key, raw in zip(REQUIRED_KEYS, nodes):
         if not isinstance(raw, dict):
             raise ValueError(f"response.cutoffs.{key} is not an object")
-        normalize_colors(raw, f"cutoffs.{key}")
         for faction in FACTIONS:
             block = raw.get(faction)
             field = f"cutoffs.{key}.{faction}"
@@ -573,6 +611,30 @@ def classify_cutoff_payload(
                 raise ValueError(f"{field}.population is negative")
             populations.append(population)
 
+    if all(population == 0 for population in populations):
+        if not within_grace:
+            raise ValueError(
+                "zero-population cutoff data is not allowed "
+                "after the startup grace period"
+            )
+        validate_zero_population_cutoffs(cutoffs)
+        return "empty"
+    if any(population == 0 for population in populations):
+        raise ValueError("cutoff populations mix zero and positive values")
+
+    for key, raw in zip(REQUIRED_KEYS, nodes):
+        if not isinstance(raw, dict):
+            raise ValueError(f"response.cutoffs.{key} is not an object")
+        normalize_colors(raw, f"cutoffs.{key}")
+        for faction in FACTIONS:
+            block = raw.get(faction)
+            field = f"cutoffs.{key}.{faction}"
+            if not isinstance(block, dict):
+                raise ValueError(f"{field} is missing")
+            population = as_int(
+                block.get("totalPopulationCount"),
+                f"{field}.totalPopulationCount",
+            )
             score_value = block.get("quantileMinValue")
             if score_value is not None:
                 score = as_number(score_value, f"{field}.quantileMinValue")
@@ -598,11 +660,6 @@ def classify_cutoff_payload(
                 quantile = as_number(block["quantile"], f"{field}.quantile")
                 if not 0 <= quantile <= 1:
                     raise ValueError(f"{field}.quantile is out of range")
-
-    if all(population == 0 for population in populations):
-        return "empty"
-    if any(population == 0 for population in populations):
-        raise ValueError("cutoff populations mix zero and positive values")
     return "ready"
 
 

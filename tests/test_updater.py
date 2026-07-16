@@ -621,6 +621,124 @@ def test_no_valid_main_season_fails() -> None:
         )
 
 
+def test_invalid_main_season_slug_fails() -> None:
+    season = make_season(
+        "season-mn-1", "2026-01-01T00:00:00Z", "2026-12-01T00:00:00Z"
+    )
+    season["slug"] = None
+    with pytest.raises(ValueError, match=r"static-data\.seasons\[0\]\.slug is invalid"):
+        updater.resolve_season_context(
+            {"seasons": [season]},
+            "cn",
+            dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+        )
+
+
+@pytest.mark.parametrize("field", ["starts", "ends"])
+def test_invalid_main_season_time_map_fails(field: str) -> None:
+    season = make_season(
+        "season-mn-1", "2026-01-01T00:00:00Z", "2026-12-01T00:00:00Z"
+    )
+    season[field] = "broken"
+    with pytest.raises(ValueError, match="starts/ends are missing"):
+        updater.resolve_season_context(
+            {"seasons": [season]},
+            "cn",
+            dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+        )
+
+
+@pytest.mark.parametrize("field", ["starts", "ends"])
+def test_main_season_missing_regional_time_fails(field: str) -> None:
+    season = make_season(
+        "season-mn-1", "2026-01-01T00:00:00Z", "2026-12-01T00:00:00Z"
+    )
+    del season[field]["cn"]
+    with pytest.raises(ValueError, match=rf"{field}\.cn is not a string timestamp"):
+        updater.resolve_season_context(
+            {"seasons": [season]},
+            "cn",
+            dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+        )
+
+
+@pytest.mark.parametrize("field", ["starts", "ends"])
+def test_main_season_invalid_regional_timestamp_fails(field: str) -> None:
+    season = make_season(
+        "season-mn-1", "2026-01-01T00:00:00Z", "2026-12-01T00:00:00Z"
+    )
+    season[field]["cn"] = "broken"
+    with pytest.raises(ValueError, match=rf"{field}\.cn is not a supported timestamp"):
+        updater.resolve_season_context(
+            {"seasons": [season]},
+            "cn",
+            dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+        )
+
+
+def test_main_season_start_must_precede_end() -> None:
+    season = make_season(
+        "season-mn-1", "2026-12-01T00:00:00Z", "2026-12-01T00:00:00Z"
+    )
+    with pytest.raises(ValueError, match="startsAt must be before endsAt"):
+        updater.resolve_season_context(
+            {"seasons": [season]},
+            "cn",
+            dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+        )
+
+
+def test_invalid_non_main_season_is_ignored() -> None:
+    invalid_non_main = {
+        "is_main_season": False,
+        "slug": None,
+        "starts": "broken",
+        "ends": "broken",
+    }
+    valid_main = make_season(
+        "season-mn-1", "2026-01-01T00:00:00Z", "2026-12-01T00:00:00Z"
+    )
+    context = updater.resolve_season_context(
+        {"seasons": [invalid_non_main, valid_main]},
+        "cn",
+        dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+    )
+    assert context.state == "active"
+    assert context.season["slug"] == "season-mn-1"
+
+
+def test_broken_current_main_season_does_not_fall_back_to_previous() -> None:
+    previous = make_season(
+        "season-mn-1", "2026-01-01T00:00:00Z", "2026-06-30T00:00:00Z"
+    )
+    current = make_season(
+        "season-mn-2", "2026-07-01T00:00:00Z", "2026-12-01T00:00:00Z"
+    )
+    current["starts"]["cn"] = "broken"
+    with pytest.raises(ValueError, match="starts.cn is not a supported timestamp"):
+        updater.resolve_season_context(
+            {"seasons": [previous, current]},
+            "cn",
+            dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+        )
+
+
+def test_broken_upcoming_main_season_does_not_fall_back_to_ended() -> None:
+    previous = make_season(
+        "season-mn-1", "2026-01-01T00:00:00Z", "2026-06-30T00:00:00Z"
+    )
+    upcoming = make_season(
+        "season-mn-2", "2026-07-10T00:00:00Z", "2026-12-01T00:00:00Z"
+    )
+    upcoming["ends"]["cn"] = "broken"
+    with pytest.raises(ValueError, match="ends.cn is not a supported timestamp"):
+        updater.resolve_season_context(
+            {"seasons": [previous, upcoming]},
+            "cn",
+            dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+        )
+
+
 def test_regions_can_resolve_different_states() -> None:
     season = make_season(
         "season-mn-1", "2026-01-01T00:00:00Z", "2026-12-01T00:00:00Z"
@@ -654,7 +772,7 @@ def test_offseason_data_is_empty_unavailable_and_stable() -> None:
     assert first["dataVersion"] == "202606300000"
 
 
-def test_all_zero_cutoff_nodes_are_collecting() -> None:
+def test_zero_population_inside_grace_is_collecting() -> None:
     static, context = make_context()
     payload = make_zero_payload()
     assert updater.classify_cutoff_payload(
@@ -670,6 +788,111 @@ def test_all_zero_cutoff_nodes_are_collecting() -> None:
     assert data["populationByFaction"] == {"all": 0, "horde": 0, "alliance": 0}
     assert data["cutoffs"] == {}
     assert "p999" not in updater.render_lua(data)
+
+
+def test_zero_population_at_grace_boundary_fails() -> None:
+    _, context = make_context()
+    with pytest.raises(ValueError, match="zero-population cutoff data is not allowed"):
+        updater.classify_cutoff_payload(
+            make_zero_payload(),
+            "cn",
+            context,
+            dt.datetime(2026, 7, 15, tzinfo=dt.timezone.utc),
+        )
+
+
+def test_zero_population_after_grace_fails() -> None:
+    _, context = make_context()
+    with pytest.raises(ValueError, match="zero-population cutoff data is not allowed"):
+        updater.classify_cutoff_payload(
+            make_zero_payload(),
+            "cn",
+            context,
+            dt.datetime(2026, 7, 21, tzinfo=dt.timezone.utc),
+        )
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "quantileMinValue",
+        "quantilePopulationCount",
+        "quantilePopulationFraction",
+    ],
+)
+@pytest.mark.parametrize("value", [1, -1])
+def test_zero_population_nonzero_cutoff_fields_fail(field: str, value: int) -> None:
+    _, context = make_context()
+    payload = make_zero_payload()
+    payload["cutoffs"]["p999"]["all"][field] = value
+    with pytest.raises(ValueError, match="must be zero or null when population is zero"):
+        updater.classify_cutoff_payload(
+            payload,
+            "cn",
+            context,
+            dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+        )
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "quantileMinValue",
+        "quantilePopulationCount",
+        "quantilePopulationFraction",
+    ],
+)
+@pytest.mark.parametrize("value", [None, 0, 0.0])
+def test_zero_population_null_and_zero_cutoff_fields_are_allowed(
+    field: str, value: object
+) -> None:
+    _, context = make_context()
+    payload = make_zero_payload()
+    payload["cutoffs"]["p999"]["all"][field] = value
+    assert updater.classify_cutoff_payload(
+        payload,
+        "cn",
+        context,
+        dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+    ) == "empty"
+
+
+def test_zero_population_invalid_color_fails() -> None:
+    _, context = make_context()
+    payload = make_zero_payload()
+    payload["cutoffs"]["p999"]["allColor"] = "invalid"
+    with pytest.raises(ValueError, match="must match #RRGGBB"):
+        updater.classify_cutoff_payload(
+            payload,
+            "cn",
+            context,
+            dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+        )
+
+
+def test_zero_population_out_of_range_quantile_fails() -> None:
+    _, context = make_context()
+    payload = make_zero_payload()
+    payload["cutoffs"]["p999"]["all"]["quantile"] = 2
+    with pytest.raises(ValueError, match="all.quantile is out of range"):
+        updater.classify_cutoff_payload(
+            payload,
+            "cn",
+            context,
+            dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+        )
+
+
+def test_zero_population_valid_quantile_is_allowed() -> None:
+    _, context = make_context()
+    payload = make_zero_payload()
+    payload["cutoffs"]["p999"]["all"]["quantile"] = 0.999
+    assert updater.classify_cutoff_payload(
+        payload,
+        "cn",
+        context,
+        dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+    ) == "empty"
 
 
 def test_all_missing_cutoffs_are_allowed_only_during_grace() -> None:
@@ -767,6 +990,57 @@ def configure_update_orchestration(
         "write_region_data",
         lambda region, *_args, **_kwargs: fake_write_result(region),
     )
+
+
+def test_invalid_shared_main_season_metadata_stops_before_any_write(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    static = {
+        "seasons": [
+            make_season(
+                "season-mn-1",
+                "2026-01-01T00:00:00Z",
+                "2026-12-01T00:00:00Z",
+            )
+        ]
+    }
+    static["seasons"][0]["ends"]["eu"] = "broken"
+    writes: list[str] = []
+    cutoff_calls: list[str] = []
+    tier_calls: list[str] = []
+    monkeypatch.setattr(update_all_regions, "SUMMARY_PATH", tmp_path / "summary.json")
+    monkeypatch.setattr(update_all_regions, "fetch_static_data", lambda *_: static)
+    monkeypatch.setattr(
+        update_all_regions,
+        "fetch_cutoff_payload",
+        lambda region, *_args, **_kwargs: cutoff_calls.append(region),
+    )
+    monkeypatch.setattr(
+        update_all_regions,
+        "fetch_score_tiers",
+        lambda season, *_args, **_kwargs: tier_calls.append(season),
+    )
+    monkeypatch.setattr(
+        update_all_regions,
+        "write_region_data",
+        lambda region, *_args, **_kwargs: writes.append(region),
+    )
+
+    summary = update_all_regions.run_updates(
+        list(SUPPORTED_REGIONS),
+        now=dt.datetime(2026, 7, 5, tzinfo=dt.timezone.utc),
+    )
+
+    assert summary["success"] is False
+    assert writes == []
+    assert cutoff_calls == []
+    assert tier_calls == []
+    assert summary["requests"] == {
+        "staticData": 1,
+        "scoreTiers": 0,
+        "seasonCutoffs": 0,
+        "total": 1,
+    }
 
 
 def test_all_offseason_regions_only_request_static_data(
