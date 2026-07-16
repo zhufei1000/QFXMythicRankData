@@ -68,7 +68,7 @@ def validate_addon(region: str, config: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"{addon} contains data for the wrong region")
     if available != "true" or status != "ready":
         raise ValueError(f"{addon} does not contain ready production data")
-    expected_version = f"1.0.{data_version}"
+    expected_version = f"2.0.{data_version}"
     if toc_version != expected_version:
         raise ValueError(
             f"{addon} TOC Version {toc_version} does not match {expected_version}"

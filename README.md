@@ -14,7 +14,19 @@ The addons contain no display UI, frames, events, timers, `OnUpdate` handlers, s
 
 ## Data and attribution
 
-Data comes from the public [Raider.IO](https://raider.io) Mythic+ `static-data` and `season-cutoffs` API endpoints. The updater selects the active main season independently for each region, validates the complete response, and atomically replaces only that region's known-good data.
+Data comes from the public [Raider.IO](https://raider.io) Mythic+ `static-data`, `season-cutoffs`, and `score-tiers` API endpoints. The updater selects the active main season independently for each region, validates the complete response, and atomically replaces only that region's known-good data.
+
+Schema Version 2 stores normalized source data for:
+
+- the five percentile score cutoffs (`p999`, `p990`, `p900`, `p750`, and `p600`)
+- Mythic+ achievement score cutoffs
+- Raider.IO's source history points from the most recent 30 days
+- all-faction, Horde, and Alliance regional populations and cutoff colors
+- the current season's start/end times and dungeon pool
+- source-provided keystone bracket levels and season remapping status
+- Raider.IO score color tiers
+
+The packages contain no player names, realms, full leaderboard, dungeon-run members, equipment, talents, class statistics, or current affix schedule. Historical points are stored exactly as normalized source points: the database does not calculate daily changes, faction ratios, cross-region comparisons, or display results.
 
 Rank results are estimates derived from published percentile score cutoffs. They are not exact character leaderboard positions and should always be presented as estimates.
 
@@ -46,8 +58,15 @@ The compatible API methods are:
 - `IsRegionAvailable(region)`
 - `GetCurrentRegion()`
 - `GetMetadata(region)`
+- `GetPopulation(region, faction)`
+- `GetSeasonInfo(region)`
+- `GetSeasonDungeons(region)`
 - `GetCutoff(region, key, faction)`
 - `GetCutoffs(region, faction)`
+- `GetAchievementCutoff(region, key, faction)`
+- `GetCutoffHistory(region, key)`
+- `GetScoreTiers(region)`
+- `GetBracketDungeonLevels(region)`
 - `GetPlayerScore()`
 - `EstimateRank(region, score, faction)`
 - `EstimatePlayerRank(region, faction)`
@@ -86,6 +105,6 @@ python scripts/update_cn_data.py
 
 ## Automation and packages
 
-The `Update Regional Mythic Rank Data` GitHub Actions workflow runs daily at 09:17 China Standard Time and can be started manually. It tests the shared API under Lua 5.1, updates all five regions, creates at most one data commit, and builds five installable ZIP archives.
+The `Update Regional Mythic Rank Data` GitHub Actions workflow runs twice daily at 09:17 and 21:17 China Standard Time and can be started manually. A normal same-season update makes about seven Raider.IO requests: one `static-data`, one shared `score-tiers`, and five regional `season-cutoffs` requests. It tests the shared API under Lua 5.1, updates all five regions, creates at most one data commit, and builds five installable ZIP archives.
 
-The archives are uploaded as the `QFXMythicRankData-packages` Actions Artifact and retained for 5 days. CurseForge, GitHub Release, and Wago publishing are not automated at this stage.
+The archives are uploaded as the `QFXMythicRankData-packages` Actions Artifact and retained for 5 days. Changed regional packages continue through the existing validated CurseForge publishing step.

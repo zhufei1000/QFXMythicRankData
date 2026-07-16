@@ -18,7 +18,7 @@ import publish_curseforge as publisher
 from region_config import REGIONS
 
 
-VERSION_RE = re.compile(r"^1\.0\.([0-9]{12})$")
+VERSION_RE = re.compile(r"^2\.0\.([0-9]{12})$")
 DATA_VERSION_RE = re.compile(r'^\s*dataVersion\s*=\s*"([0-9]{12})"\s*,', re.MULTILINE)
 SEASON_RE = re.compile(r'^\s*season\s*=\s*"(season-[a-z0-9-]+)"\s*,', re.MULTILINE)
 

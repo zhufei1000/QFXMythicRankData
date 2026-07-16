@@ -11,7 +11,7 @@ if type(API) ~= "table" then
 end
 
 API.name = "QFXMythicRankData"
-API.apiVersion = math.max(tonumber(API.apiVersion) or 0, 1)
+API.apiVersion = math.max(tonumber(API.apiVersion) or 0, 2)
 API.regions = API.regions or {}
 API._callbacks = API._callbacks or {}
 
@@ -71,6 +71,16 @@ local function CopyResult(result)
         copy[key] = value
     end
     return copy
+end
+
+local function GetEntryColor(entry, faction)
+    if type(entry) ~= "table" then
+        return nil
+    end
+    if type(entry.colors) == "table" and type(entry.colors[faction]) == "string" then
+        return entry.colors[faction]
+    end
+    return entry.color
 end
 
 function API:GetCurrentRegion()
@@ -147,7 +157,39 @@ function API:GetMetadata(region)
         population = data.population,
         dataVersion = data.dataVersion,
         status = data.status,
+        schemaVersion = data.schemaVersion,
+        populationByFaction = data.populationByFaction,
+        isRemappedSeason = data.isRemappedSeason,
     }
+end
+
+function API:GetPopulation(region, faction)
+    local data = self:GetRegionData(region)
+    if not data then
+        return nil
+    end
+
+    faction = NormalizeFaction(faction)
+    if type(data.populationByFaction) == "table"
+        and type(data.populationByFaction[faction]) == "number"
+    then
+        return data.populationByFaction[faction]
+    end
+    if faction == "all" and type(data.population) == "number" then
+        return data.population
+    end
+    return nil
+end
+
+function API:GetSeasonInfo(region)
+    local data = self:GetRegionData(region)
+    return data and type(data.seasonInfo) == "table" and data.seasonInfo or nil
+end
+
+function API:GetSeasonDungeons(region)
+    local seasonInfo = self:GetSeasonInfo(region)
+    return seasonInfo and type(seasonInfo.dungeons) == "table"
+        and seasonInfo.dungeons or nil
 end
 
 function API:GetCutoff(region, key, faction)
@@ -169,7 +211,7 @@ function API:GetCutoff(region, key, faction)
     local result = CopyResult(entry)
     result.key = key
     result.quantile = cutoff.quantile
-    result.color = cutoff.color
+    result.color = GetEntryColor(cutoff, NormalizeFaction(faction))
     return result
 end
 
@@ -182,6 +224,50 @@ function API:GetCutoffs(region, faction)
         end
     end
     return results
+end
+
+function API:GetAchievementCutoff(region, key, faction)
+    local data = self:GetRegionData(region)
+    if not data or type(data.achievements) ~= "table" then
+        return nil
+    end
+
+    local achievement = data.achievements[key]
+    if type(achievement) ~= "table" then
+        return nil
+    end
+
+    faction = NormalizeFaction(faction)
+    local entry = achievement[faction]
+    if type(entry) ~= "table" then
+        return nil
+    end
+
+    local result = CopyResult(entry)
+    result.key = key
+    result.thresholdScore = achievement.thresholdScore
+    result.quantile = achievement.quantile
+    result.color = GetEntryColor(achievement, faction)
+    return result
+end
+
+function API:GetCutoffHistory(region, key)
+    local data = self:GetRegionData(region)
+    if not data or type(data.history) ~= "table" then
+        return nil
+    end
+    return type(data.history[key]) == "table" and data.history[key] or nil
+end
+
+function API:GetScoreTiers(region)
+    local data = self:GetRegionData(region)
+    return data and type(data.scoreTiers) == "table" and data.scoreTiers or nil
+end
+
+function API:GetBracketDungeonLevels(region)
+    local data = self:GetRegionData(region)
+    return data and type(data.bracketDungeonLevels) == "table"
+        and data.bracketDungeonLevels or nil
 end
 
 -- Returns the player's Blizzard Mythic+ score when the API is available.

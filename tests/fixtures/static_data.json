@@ -1,0 +1,52 @@
+{
+  "seasons": [
+    {
+      "slug": "season-mn-1",
+      "name": "MN Season 1",
+      "short_name": "MN1",
+      "blizzard_season_id": 17,
+      "is_main_season": true,
+      "starts": {
+        "cn": "2026-03-25T23:00:00Z",
+        "us": "2026-03-24T15:00:00Z",
+        "eu": "2026-03-25T04:00:00Z",
+        "tw": "2026-03-25T23:00:00Z",
+        "kr": "2026-03-25T23:00:00Z"
+      },
+      "ends": {
+        "cn": "2026-12-17T23:00:00Z",
+        "us": "2026-12-16T15:00:00Z",
+        "eu": "2026-12-17T04:00:00Z",
+        "tw": "2026-12-17T23:00:00Z",
+        "kr": "2026-12-17T23:00:00Z"
+      },
+      "seasonal_affix": {
+        "id": 999,
+        "name": "Fixture Affix",
+        "icon": "fixture_affix"
+      },
+      "dungeons": [
+        {
+          "id": 14032,
+          "challenge_mode_id": 402,
+          "slug": "algethar-academy",
+          "name": "Algeth'ar Academy",
+          "short_name": "AA",
+          "keystone_timer_seconds": 1860,
+          "icon_url": "https://example.invalid/ignored-icon.jpg",
+          "background_image_url": "https://example.invalid/ignored-background.jpg"
+        },
+        {
+          "id": 15829,
+          "challenge_mode_id": 558,
+          "slug": "magisters-terrace",
+          "name": "Magisters' Terrace",
+          "short_name": "MT",
+          "keystone_timer_seconds": 2040,
+          "icon_url": "https://example.invalid/ignored-icon.jpg",
+          "background_image_url": "https://example.invalid/ignored-background.jpg"
+        }
+      ]
+    }
+  ]
+}

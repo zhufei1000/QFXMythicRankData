@@ -24,11 +24,11 @@ def _write_dynamic_packages(
     mixed_region: str | None = None,
     mixed_version: str = "202607160901",
 ) -> None:
-    version = f"1.0.{data_version}"
+    version = f"2.0.{data_version}"
     for region in publish.REGION_ORDER:
         addon = str(REGIONS[region]["addon"])
         region_data_version = mixed_version if region == mixed_region else data_version
-        region_version = f"1.0.{region_data_version}" if region == mixed_region else version
+        region_version = f"2.0.{region_data_version}" if region == mixed_region else version
         path = directory / f"{addon}-{region_version}.zip"
         data = (
             "local API = _G.QFXMythicRankData\n"
@@ -45,7 +45,7 @@ def _write_dynamic_packages(
 def test_discovers_current_release_from_all_five_packages(tmp_path: pathlib.Path) -> None:
     _write_dynamic_packages(tmp_path)
     release = auto.discover_release(tmp_path)
-    assert release.version == "1.0.202607160900"
+    assert release.version == "2.0.202607160900"
     assert release.data_version == "202607160900"
     assert release.season == "season-mn-1"
     assert "Data version: 202607160900" in release.changelog
@@ -60,8 +60,8 @@ def test_mixed_package_versions_fail_before_upload(tmp_path: pathlib.Path) -> No
 def test_filename_and_data_version_must_match(tmp_path: pathlib.Path) -> None:
     _write_dynamic_packages(tmp_path)
     addon = str(REGIONS["cn"]["addon"])
-    source = tmp_path / f"{addon}-1.0.202607160900.zip"
-    target = tmp_path / f"{addon}-1.0.202607160902.zip"
+    source = tmp_path / f"{addon}-2.0.202607160900.zip"
+    target = tmp_path / f"{addon}-2.0.202607160902.zip"
     source.rename(target)
     with pytest.raises(publish.PublishError, match="does not match"):
         auto.discover_release(tmp_path)
@@ -71,7 +71,7 @@ def test_configure_publisher_sets_runtime_release_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     release = auto.Release(
-        "1.0.202607160900",
+        "2.0.202607160900",
         "202607160900",
         "season-mn-1",
         "changelog\n",
