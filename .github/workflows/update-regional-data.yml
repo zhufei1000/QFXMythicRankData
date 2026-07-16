@@ -6,6 +6,9 @@ on:
     # 01:17 UTC = 09:17 China Standard Time.
     - cron: "17 1 * * *"
 
+    # 13:17 UTC = 21:17 China Standard Time.
+    - cron: "17 13 * * *"
+
 permissions:
   contents: write
 
@@ -45,29 +48,14 @@ jobs:
           RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
         run: python scripts/update_all_regions.py
 
-      - name: Detect regional data changes
+      - name: Detect publishable regional data changes
         id: changes
         shell: bash
         run: |
           set -euo pipefail
-          files=(
-            QFXMythicRankData_CN/Data.lua
-            QFXMythicRankData_CN/QFXMythicRankData_CN.toc
-            QFXMythicRankData_US/Data.lua
-            QFXMythicRankData_US/QFXMythicRankData_US.toc
-            QFXMythicRankData_EU/Data.lua
-            QFXMythicRankData_EU/QFXMythicRankData_EU.toc
-            QFXMythicRankData_TW/Data.lua
-            QFXMythicRankData_TW/QFXMythicRankData_TW.toc
-            QFXMythicRankData_KR/Data.lua
-            QFXMythicRankData_KR/QFXMythicRankData_KR.toc
-          )
-          if git diff --quiet -- "${files[@]}"; then
-            echo "changed=false" >> "${GITHUB_OUTPUT}"
-            echo "Regional Raider.IO data has not changed; packaging and publishing are skipped."
-          else
-            echo "changed=true" >> "${GITHUB_OUTPUT}"
-          fi
+          python scripts/detect_regional_data_changes.py \
+            --base-ref HEAD \
+            --github-output "${GITHUB_OUTPUT}"
 
       - name: Run test suite against updated data
         if: steps.changes.outputs.changed == 'true'
