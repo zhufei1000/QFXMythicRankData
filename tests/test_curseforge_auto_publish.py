@@ -93,14 +93,15 @@ def test_configure_publisher_sets_runtime_release_metadata(
     assert publish.SOURCE_COMMIT == "a" * 40
 
 
-def test_scheduled_workflow_runs_once_and_only_publishes_changed_data() -> None:
+def test_scheduled_workflow_runs_twice_and_only_publishes_changed_data() -> None:
     workflow = (ROOT / ".github/workflows/update-regional-data.yml").read_text(
         encoding="utf-8"
     )
-    assert workflow.count("cron:") == 1
+    assert workflow.count("cron:") == 2
     assert 'cron: "17 1 * * *"' in workflow
-    assert 'cron: "18 10 * * *"' not in workflow
-    assert "Detect regional data changes" in workflow
+    assert 'cron: "17 13 * * *"' in workflow
+    assert "Detect publishable regional data changes" in workflow
+    assert "scripts/detect_regional_data_changes.py" in workflow
     assert "steps.changes.outputs.changed == 'true'" in workflow
     assert "CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}" in workflow
     assert workflow.index("Upload changed regional packages to CurseForge") < workflow.index(
