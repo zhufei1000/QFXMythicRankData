@@ -2,10 +2,20 @@ name: Update Regional Mythic Rank Data
 
 on:
   workflow_dispatch:
+    inputs:
+      force_publish:
+        description: "Publish selected packages even when regional data is unchanged"
+        required: true
+        type: boolean
+        default: false
+      regions:
+        description: "Regions to force publish: all or comma-separated CN,US,EU,TW,KR"
+        required: true
+        type: string
+        default: "all"
   schedule:
     # 01:17 UTC = 09:17 China Standard Time.
     - cron: "17 1 * * *"
-
     # 13:17 UTC = 21:17 China Standard Time.
     - cron: "17 13 * * *"
 
@@ -57,14 +67,28 @@ jobs:
             --base-ref HEAD \
             --github-output "${GITHUB_OUTPUT}"
 
+      - name: Resolve regional publishing scope
+        id: publish_scope
+        shell: bash
+        env:
+          DATA_CHANGED: ${{ steps.changes.outputs.changed }}
+          CHANGED_REGIONS: ${{ steps.changes.outputs.changed_regions }}
+          FORCE_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.force_publish || false }}
+          REQUESTED_REGIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.regions || 'all' }}
+          WORKFLOW_REF: ${{ github.ref }}
+          PUBLISH_REF: refs/heads/main
+        run: |
+          set -euo pipefail
+          python scripts/resolve_publish_scope.py --github-output "${GITHUB_OUTPUT}"
+
       - name: Run test suite against updated data
-        if: steps.changes.outputs.changed == 'true'
+        if: steps.publish_scope.outputs.should_publish == 'true'
         env:
           LUA51: /usr/bin/lua5.1
         run: python -m pytest -v
 
       - name: Validate updated Lua 5.1 syntax
-        if: steps.changes.outputs.changed == 'true'
+        if: steps.publish_scope.outputs.should_publish == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -75,29 +99,35 @@ jobs:
           done
 
       - name: Build installable regional packages
-        if: steps.changes.outputs.changed == 'true'
+        if: steps.publish_scope.outputs.should_publish == 'true'
         shell: bash
+        env:
+          PUBLISH_REGIONS: ${{ steps.publish_scope.outputs.regions }}
         run: |
           set -euo pipefail
-          IFS=',' read -ra regions <<< "${{ steps.changes.outputs.changed_regions }}"
+          IFS=',' read -ra regions <<< "${PUBLISH_REGIONS}"
           args=()
           for region in "${regions[@]}"; do
-            args+=(--regions "$(echo "$region" | tr '[:upper:]' '[:lower:]')")
+            args+=("$(echo "$region" | tr '[:upper:]' '[:lower:]')")
           done
-          python scripts/build_packages.py "${args[@]}"
+          rm -rf dist
+          python scripts/build_packages.py --regions "${args[@]}"
 
       - name: Validate generated packages offline
-        if: steps.changes.outputs.changed == 'true'
+        if: steps.publish_scope.outputs.should_publish == 'true'
         shell: bash
+        env:
+          PUBLISH_REGIONS: ${{ steps.publish_scope.outputs.regions }}
         run: |
-          IFS=',' read -ra regions <<< "${{ steps.changes.outputs.changed_regions }}"
+          set -euo pipefail
+          IFS=',' read -ra regions <<< "${PUBLISH_REGIONS}"
           args=()
           for region in "${regions[@]}"; do
-            args+=(--regions "$(echo "$region" | tr '[:upper:]' '[:lower:]')")
+            args+=("$(echo "$region" | tr '[:upper:]' '[:lower:]')")
           done
           python scripts/publish_curseforge_auto.py \
             --artifact-dir dist \
-            "${args[@]}" \
+            --regions "${args[@]}" \
             --mode validate \
             --changelog-file publish-report/changelog.md \
             --report-file publish-report/prepublish-validation.json \
@@ -129,43 +159,69 @@ jobs:
           git commit -m "Update regional Mythic+ cutoff data"
           echo "commit_sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
 
+      - name: Resolve publishing source commit
+        if: steps.publish_scope.outputs.should_publish == 'true'
+        id: source_commit
+        shell: bash
+        env:
+          DATA_CHANGED: ${{ steps.changes.outputs.changed }}
+          GENERATED_COMMIT: ${{ steps.commit.outputs.commit_sha }}
+          WORKFLOW_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "${DATA_CHANGED}" == "true" ]]; then
+            if [[ ! "${GENERATED_COMMIT}" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "Generated commit SHA is invalid." >&2
+              exit 1
+            fi
+            echo "sha=${GENERATED_COMMIT}" >> "${GITHUB_OUTPUT}"
+          else
+            if [[ ! "${WORKFLOW_COMMIT}" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "Workflow commit SHA is invalid." >&2
+              exit 1
+            fi
+            echo "sha=${WORKFLOW_COMMIT}" >> "${GITHUB_OUTPUT}"
+          fi
+
       - name: Upload regional package Artifact
-        if: steps.changes.outputs.changed == 'true'
+        if: steps.publish_scope.outputs.should_publish == 'true'
         id: packages
         uses: actions/upload-artifact@v4
         with:
-          name: QFXMythicRankData-packages
+          name: QFXMythicRankData-packages-${{ github.run_id }}
           path: dist/*.zip
           retention-days: 5
           if-no-files-found: error
 
       - name: Upload changed regional packages to CurseForge
-        if: steps.changes.outputs.changed == 'true'
+        if: steps.publish_scope.outputs.should_publish == 'true'
         id: curseforge
         shell: bash
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          PUBLISH_REGIONS: ${{ steps.publish_scope.outputs.regions }}
         run: |
-          IFS=',' read -ra regions <<< "${{ steps.changes.outputs.changed_regions }}"
+          set -euo pipefail
+          IFS=',' read -ra regions <<< "${PUBLISH_REGIONS}"
           args=()
           for region in "${regions[@]}"; do
-            args+=(--regions "$(echo "$region" | tr '[:upper:]' '[:lower:]')")
+            args+=("$(echo "$region" | tr '[:upper:]' '[:lower:]')")
           done
           python scripts/publish_curseforge_auto.py \
             --artifact-dir dist \
-            "${args[@]}" \
+            --regions "${args[@]}" \
             --mode upload \
             --changelog-file publish-report/changelog.md \
             --report-file publish-report/report.json \
             --source-run-id "${GITHUB_RUN_ID}" \
             --source-artifact-id "${{ steps.packages.outputs.artifact-id }}" \
-            --source-commit "${{ steps.commit.outputs.commit_sha }}"
+            --source-commit "${{ steps.source_commit.outputs.sha }}"
 
       - name: Upload safe CurseForge publishing report
-        if: always() && steps.changes.outputs.changed == 'true'
+        if: always() && steps.publish_scope.outputs.should_publish == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: curseforge-publish-report
+          name: curseforge-publish-report-${{ github.run_id }}
           path: publish-report/report.json
           retention-days: 30
           if-no-files-found: warn

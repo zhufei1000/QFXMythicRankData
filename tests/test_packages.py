@@ -91,10 +91,22 @@ def test_packages_exclude_development_files(tmp_path: pathlib.Path) -> None:
                 assert not any(item in name for item in forbidden)
 
 
-def test_builds_only_selected_regions(tmp_path: pathlib.Path) -> None:
-    packages = build_packages.build_packages(tmp_path, regions=["cn"])
-    assert [package["region"] for package in packages] == ["cn"]
-    assert [path.name for path in tmp_path.glob("*.zip")] == [packages[0]["file"]]
+@pytest.mark.parametrize(
+    ("selected", "expected"),
+    [
+        (["cn"], ["cn"]),
+        (["us", "eu"], ["us", "eu"]),
+        (["cn", "us", "eu", "tw", "kr"], ["cn", "us", "eu", "tw", "kr"]),
+    ],
+)
+def test_builds_only_selected_regions(
+    tmp_path: pathlib.Path, selected: list[str], expected: list[str]
+) -> None:
+    packages = build_packages.build_packages(tmp_path, regions=selected)
+    assert [package["region"] for package in packages] == expected
+    assert sorted(path.name for path in tmp_path.glob("*.zip")) == sorted(
+        package["file"] for package in packages
+    )
 
 
 def _write_state_data(

@@ -131,7 +131,8 @@ def test_scheduled_workflow_runs_twice_and_only_publishes_changed_regions() -> N
     assert 'cron: "17 1 * * *"' in workflow
     assert 'cron: "17 13 * * *"' in workflow
     assert "steps.changes.outputs.changed_regions" in workflow
-    assert workflow.count("args+=(--regions") == 3
+    assert "steps.publish_scope.outputs.regions" in workflow
+    assert workflow.count('--regions "${args[@]}"') == 3
     assert "CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}" in workflow
     assert workflow.index("Upload changed regional packages to CurseForge") < workflow.index(
         "Push published regional data to main"
