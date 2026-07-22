@@ -6,7 +6,7 @@
 ## Notes-zhCN: 轻量美服大秘境分数线数据接口，数据来源 Raider.IO。
 ## Notes-zhTW: 輕量美服傳奇鑰石分數線資料介面，資料來源 Raider.IO。
 ## Author: QFX
-## Version: 2.0.202607211419
+## Version: 2.0.202607220201
 ## X-Curse-Project-ID: 1610327
 ## IconTexture: Interface\Icons\Achievement_ChallengeMode_Gold
 ## X-Category: Data
