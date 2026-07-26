@@ -7,6 +7,10 @@ on:
     paths:
       - scripts/probe_raiderio_spec_dungeon.py
       - .github/workflows/probe-raiderio-spec-dungeon.yml
+  pull_request:
+    paths:
+      - scripts/probe_raiderio_spec_dungeon.py
+      - .github/workflows/probe-raiderio-spec-dungeon.yml
   workflow_dispatch:
 
 permissions:
