@@ -6,10 +6,12 @@ on:
       - probe/raiderio-spec-dungeon-20260726
     paths:
       - scripts/probe_raiderio_spec_dungeon_v2.py
+      - scripts/probe_raiderio_spec_dungeon_v3.py
       - .github/workflows/probe-raiderio-spec-dungeon.yml
   pull_request:
     paths:
       - scripts/probe_raiderio_spec_dungeon_v2.py
+      - scripts/probe_raiderio_spec_dungeon_v3.py
       - .github/workflows/probe-raiderio-spec-dungeon.yml
   workflow_dispatch:
 
@@ -26,7 +28,7 @@ env:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 90
     steps:
       - name: Checkout probe branch
         uses: actions/checkout@v4
@@ -39,30 +41,33 @@ jobs:
       - name: Install dependency
         run: python -m pip install requests
 
-      - name: Compile optimized probe
-        run: python -m py_compile scripts/probe_raiderio_spec_dungeon_v2.py
+      - name: Compile adaptive probe
+        run: |
+          python -m py_compile scripts/probe_raiderio_spec_dungeon_v2.py
+          python -m py_compile scripts/probe_raiderio_spec_dungeon_v3.py
 
-      - name: Run optimized spec-by-dungeon coverage probe
+      - name: Run adaptive spec-by-dungeon coverage probe
         env:
           RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
-        run: python scripts/probe_raiderio_spec_dungeon_v2.py
+        run: python scripts/probe_raiderio_spec_dungeon_v3.py
 
       - name: Publish job summary
         if: always()
         run: |
-          if [ -f artifacts/raiderio_spec_dungeon_probe_v2.md ]; then
-            cat artifacts/raiderio_spec_dungeon_probe_v2.md >> "$GITHUB_STEP_SUMMARY"
-          elif [ -f artifacts/raiderio_spec_dungeon_checkpoint_v2.json ]; then
-            echo "# Optimized Raider.IO probe checkpoint" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f artifacts/raiderio_spec_dungeon_probe_v3.md ]; then
+            cat artifacts/raiderio_spec_dungeon_probe_v3.md >> "$GITHUB_STEP_SUMMARY"
+          elif [ -f artifacts/raiderio_spec_dungeon_checkpoint_v3.json ]; then
+            echo "# Adaptive Raider.IO probe checkpoint" >> "$GITHUB_STEP_SUMMARY"
             python - <<'PY'
           import json, os
           from pathlib import Path
-          p = Path("artifacts/raiderio_spec_dungeon_checkpoint_v2.json")
+          p = Path("artifacts/raiderio_spec_dungeon_checkpoint_v3.json")
           d = json.loads(p.read_text(encoding="utf-8"))
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
               f.write(f"\n- Elapsed: {d['elapsed_seconds']} seconds\n")
               f.write(f"- Completed specs: {len(d['completed_specs'])}/40\n")
               f.write(f"- Current spec: {d['current_spec'] or 'none'}\n")
+              f.write(f"- Stage: {d['stage']}\n")
               f.write(f"- HTTP requests: {d['http_requests']}\n")
           PY
           fi
@@ -71,7 +76,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: raiderio-spec-dungeon-v2-${{ github.run_id }}
+          name: raiderio-spec-dungeon-v3-${{ github.run_id }}
           path: artifacts/
           if-no-files-found: warn
           retention-days: 7
