@@ -7,6 +7,12 @@ on:
     paths:
       - scripts/probe_raiderio_live_100pages.py
       - .github/workflows/probe-raiderio-live-100pages.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - scripts/probe_raiderio_live_100pages.py
+      - .github/workflows/probe-raiderio-live-100pages.yml
   workflow_dispatch:
 
 permissions:
