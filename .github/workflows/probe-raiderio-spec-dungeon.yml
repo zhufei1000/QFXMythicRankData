@@ -1,0 +1,53 @@
+name: Probe RaiderIO Spec Dungeon Coverage
+
+on:
+  push:
+    branches:
+      - probe/raiderio-spec-dungeon-20260726
+    paths:
+      - scripts/probe_raiderio_spec_dungeon.py
+      - .github/workflows/probe-raiderio-spec-dungeon.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - name: Checkout probe branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependency
+        run: python -m pip install requests
+
+      - name: Run spec-by-dungeon coverage probe
+        env:
+          RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
+        run: python scripts/probe_raiderio_spec_dungeon.py
+
+      - name: Publish job summary
+        if: always()
+        run: |
+          if [ -f artifacts/raiderio_spec_dungeon_probe.md ]; then
+            cat artifacts/raiderio_spec_dungeon_probe.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: raiderio-spec-dungeon-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 7
