@@ -22,6 +22,7 @@ on:
       - scripts/probe_raiderio_spec_dungeon_v4.py
       - scripts/probe_wcl_raid_talents_v1.py
       - scripts/wcl_talent_export.py
+      - tests/test_talent_data.py
       - config/mythic_talents_dungeons.json
       - config/mythic_talents_raids.json
       - .github/workflows/update-mythic-talents-data.yml
