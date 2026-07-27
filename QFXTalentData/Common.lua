@@ -1,0 +1,52 @@
+local API=_G.QFXTalentData
+if not API then return end
+local manifest={
+  apiVersion=1,
+  dataVersion="2026.07.27.1232.12",
+  generatedAt="2026-07-27T12:32:12.148507+00:00",
+  seasonName="MN Season 1",
+  seasonSlug="season-mn-1",
+  source="Raider.IO global Mythic+ rankings and Warcraft Logs global raid rankings",
+  raidDifficulties={
+    [4]="Heroic",
+    [5]="Mythic",
+  },
+  dungeons={
+    {id=14032,slug="algethar-academy",names={enUS="Algeth'ar Academy", zhCN="艾杰斯亚学院", zhTW="艾傑斯亞學院"},aliases={"Algeth'ar Academy", "algethar-academy", "艾杰斯亚学院", "艾傑斯亞學院", "学院", "academy"}},
+    {id=15829,slug="magisters-terrace",names={enUS="Magisters' Terrace", zhCN="魔导师平台", zhTW="博學者殿堂"},aliases={"Magisters' Terrace", "magisters-terrace", "魔导师平台", "博學者殿堂", "魔导师", "博學者", "magister"}},
+    {id=16395,slug="maisara-caverns",names={enUS="Maisara Caverns", zhCN="迈萨拉洞窟", zhTW="邁薩拉洞窟"},aliases={"Maisara Caverns", "maisara-caverns", "迈萨拉洞窟", "邁薩拉洞窟", "迈萨拉", "邁薩拉", "maisara"}},
+    {id=16573,slug="nexuspoint-xenas",names={enUS="Nexus-Point Xenas", zhCN="节点希纳斯", zhTW="節點希納斯"},aliases={"Nexus-Point Xenas", "nexuspoint-xenas", "节点希纳斯", "節點希納斯", "希纳斯", "希納斯", "xenas", "nexuspoint", "nexus-point"}},
+    {id=4813,slug="pit-of-saron",names={enUS="Pit of Saron", zhCN="萨隆矿坑", zhTW="薩倫之淵"},aliases={"Pit of Saron", "pit-of-saron", "萨隆矿坑", "薩倫之淵", "萨隆", "薩倫", "pitofsaron"}},
+    {id=8910,slug="seat-of-the-triumvirate",names={enUS="Seat of the Triumvirate", zhCN="执政团之座", zhTW="三傑議會之座"},aliases={"Seat of the Triumvirate", "seat-of-the-triumvirate", "执政团之座", "三傑議會之座", "执政团", "執政團", "三傑議會", "triumvirate"}},
+    {id=6988,slug="skyreach",names={enUS="Skyreach", zhCN="通天峰", zhTW="擎天峰"},aliases={"Skyreach", "skyreach", "通天峰", "擎天峰"}},
+    {id=15808,slug="windrunner-spire",names={enUS="Windrunner Spire", zhCN="风行者之塔", zhTW="風行者之塔"},aliases={"Windrunner Spire", "windrunner-spire", "风行者之塔", "風行者之塔", "风行者", "風行者", "windrunner"}},
+  },
+  raids={
+    {
+      id=1307,slug="the-voidspire",names={enUS="The Voidspire", zhCN="虚影尖塔", zhTW="虛無之尖"},aliases={"the-voidspire", "The Voidspire", "虚影尖塔", "虛無之尖", "Voidspire"},
+      bosses={
+        {id=3176,slug="imperator-averzian",names={enUS="Imperator Averzian", zhCN="元首阿福扎恩", zhTW="元首阿弗茲安"}},
+        {id=3177,slug="vorasius",names={enUS="Vorasius", zhCN="弗拉希乌斯", zhTW="沃拉修斯"}},
+        {id=3179,slug="fallen-king-salhadaar",names={enUS="Fallen-King Salhadaar", zhCN="陨落之王萨哈达尔", zhTW="墮落之王薩哈達爾"}},
+        {id=3178,slug="vaelgor-and-ezzorak",names={enUS="Vaelgor & Ezzorak", zhCN="威厄高尔和艾佐拉克", zhTW="維爾戈與艾佐拉克"}},
+        {id=3180,slug="lightblinded-vanguard",names={enUS="Lightblinded Vanguard", zhCN="光盲先锋军", zhTW="盲光先鋒"}},
+        {id=3181,slug="crown-of-the-cosmos",names={enUS="Crown of the Cosmos", zhCN="宇宙之冕", zhTW="宇宙之冠"}},
+      },
+    },
+    {
+      id=1314,slug="the-dreamrift",names={enUS="The Dreamrift", zhCN="梦境裂隙", zhTW="夢境裂隙"},aliases={"the-dreamrift", "The Dreamrift", "梦境裂隙", "夢境裂隙", "Dreamrift"},
+      bosses={
+        {id=3306,slug="chimaerus",names={enUS="Chimaerus, the Undreamt God", zhCN="奇美鲁斯，未梦之神", zhTW="奇美拉斯，未夢之神"}},
+      },
+    },
+    {
+      id=1308,slug="march-on-queldanas",names={enUS="March on Quel'Danas", zhCN="进军奎尔丹纳斯", zhTW="進軍奎爾達納斯"},aliases={"march-on-queldanas", "March on Quel'Danas", "进军奎尔丹纳斯", "進軍奎爾達納斯", "Quel'Danas"},
+      bosses={
+        {id=3182,slug="beloren-child-of-alar",names={enUS="Belo'ren, Child of Al'ar", zhCN="贝洛朗，奥的子嗣", zhTW="貝洛倫，歐爾之子"}},
+        {id=3183,slug="midnight-falls",names={enUS="Midnight Falls", zhCN="至暗之夜降临", zhTW="午夜降臨"}},
+      },
+    },
+  },
+}
+local ok,reason=API:RegisterDataManifest(manifest)
+if not ok then _G.QFXTalentDataLoadError=reason end
