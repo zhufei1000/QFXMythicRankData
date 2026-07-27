@@ -9,6 +9,7 @@ from collections import Counter, defaultdict
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--zone", required=True, type=int)
     parser.add_argument("--difficulty", required=True, type=int, choices=(4, 5))
     parser.add_argument("--output", required=True, type=pathlib.Path)
     parser.add_argument("--markdown", required=True, type=pathlib.Path)
@@ -17,6 +18,7 @@ def parse_args():
 
 
 args = parse_args()
+os.environ["WCL_ZONE_ID"] = str(args.zone)
 os.environ["WCL_DIFFICULTY"] = str(args.difficulty)
 import probe_wcl_raid_talents_v1 as base  # noqa: E402
 
