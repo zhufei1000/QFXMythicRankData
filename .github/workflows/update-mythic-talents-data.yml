@@ -191,6 +191,10 @@ jobs:
           python -m pytest -q tests/test_talent_data.py
           find QFXTalentData -name '*.lua' -print0 | xargs -0 -n1 luac5.1 -p
           unzip -t "artifacts/QFXTalentData-${GITHUB_RUN_ID}.zip"
+          test -f QFXTalentData/SpecLoaders.lua
+          test ! -d QFXTalentData/Classes
+          ! grep -q '\["selection"\]' QFXTalentData/SpecLoaders.lua
+          test "$(unzip -Z1 "artifacts/QFXTalentData-${GITHUB_RUN_ID}.zip" | grep -c '^QFXTalentData/[^/]*$')" -eq 6
           grep -q 'slug="sporefall"' QFXTalentData/Common.lua
           grep -q 'id=3159' QFXTalentData/Common.lua
 
@@ -220,7 +224,7 @@ jobs:
           target_branch="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A -- QFXTalentData QFXMythicTalents_Data
+          git add -A -- QFXTalentData
           if git diff --cached --quiet; then
             echo "QFXTalentData is unchanged."
           else

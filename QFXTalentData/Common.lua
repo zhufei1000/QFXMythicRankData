@@ -2,8 +2,8 @@ local API=_G.QFXTalentData
 if not API then return end
 local manifest={
   apiVersion=1,
-  dataVersion="2026.07.27.1232.12",
-  generatedAt="2026-07-27T12:32:12.148507+00:00",
+  dataVersion="2026.07.27.1350.27",
+  generatedAt="2026-07-27T13:50:27.808840+00:00",
   seasonName="MN Season 1",
   seasonSlug="season-mn-1",
   source="Raider.IO global Mythic+ rankings and Warcraft Logs global raid rankings",
@@ -44,6 +44,12 @@ local manifest={
       bosses={
         {id=3182,slug="beloren-child-of-alar",names={enUS="Belo'ren, Child of Al'ar", zhCN="贝洛朗，奥的子嗣", zhTW="貝洛倫，歐爾之子"}},
         {id=3183,slug="midnight-falls",names={enUS="Midnight Falls", zhCN="至暗之夜降临", zhTW="午夜降臨"}},
+      },
+    },
+    {
+      id=2427,slug="sporefall",names={enUS="Sporefall", zhCN="孢陨幽境", zhTW="孢殞幽境"},aliases={"sporefall", "Sporefall", "孢陨幽境", "孢殞幽境"},
+      bosses={
+        {id=3159,slug="rotmire",names={enUS="Rotmire", zhCN="腐沼", zhTW="腐沼"}},
       },
     },
   },

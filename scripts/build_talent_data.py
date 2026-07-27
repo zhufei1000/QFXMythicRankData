@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import argparse, datetime as dt, json, pathlib, shutil, zipfile
-from collections import Counter
 from typing import Any
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ADDON = "QFXTalentData"
+TEMPLATE_DIR = ROOT / "scripts" / "templates" / "qfx_talent_data"
 CLASSES = {
     "DEATHKNIGHT": (250, 251, 252), "DEMONHUNTER": (577, 581, 1480),
     "DRUID": (102, 103, 104, 105), "EVOKER": (1467, 1468, 1473),
@@ -56,41 +56,6 @@ def samples(rows: Any) -> list[str]:
         if value: out.append(value)
         if len(out) == 10: break
     return out
-
-
-def nodes(rows: Any, n: int) -> dict[str, list[dict[str, Any]]]:
-    out = {}
-    for row in rows if isinstance(rows, list) else []:
-        if not isinstance(row, dict): continue
-        key = txt(row.get("node") or row.get("slot") or row.get("feature"))
-        if not key: continue
-        choices = []
-        raw = row.get("choices")
-        if isinstance(raw, list):
-            for item in raw:
-                if not isinstance(item, dict): continue
-                choice, count = txt(item.get("choice") or item.get("feature")), pos(item.get("count"))
-                if not choice or not count: continue
-                share = item.get("share")
-                if not isinstance(share, (int, float)): share = count / n if n else 0
-                choices.append({"choice": choice, "count": count, "share": round(float(share), 4)})
-        else:
-            count = pos(row.get("count"))
-            if count:
-                share = row.get("share")
-                if not isinstance(share, (int, float)): share = count / n if n else 0
-                choices.append({"choice": key, "count": count, "share": round(float(share), 4)})
-        if choices: out[key] = choices
-    return out
-
-
-def feature_nodes(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    c = Counter()
-    for row in rows:
-        value = row.get("features")
-        if isinstance(value, list): c.update(set(x for x in value if isinstance(x, str) and x))
-    n = len(rows)
-    return {k: [{"choice": k, "count": v, "share": round(v / n, 4)}] for k, v in c.most_common()} if n else {}
 
 
 def version(raws: list[dict[str, Any]]) -> tuple[str, str]:
@@ -154,8 +119,7 @@ def mplus(raw: dict[str, Any]):
         ss = samples(row.get("sample_loadouts")); rec = txt(row.get("recommended_loadout"))
         if not ss: continue
         if rec not in ss: rec = ss[0]
-        source = row.get("selection_nodes") if isinstance(row.get("selection_nodes"), list) else row.get("variation_nodes")
-        out[(sid, did)] = {"recommended": rec, "samples": ss, "selection": nodes(source, len(ss))}
+        out[(sid, did)] = {"recommended": rec, "samples": ss}
         names.setdefault(sid, txt(row.get("spec")) or str(sid))
     return names, out
 
@@ -174,61 +138,15 @@ def raid_data(raws: list[dict[str, Any]], boss_to_raid: dict[int, int]):
             ss = samples(raw_samples); rec = txt(row.get("recommended_loadout"))
             if not ss: continue
             if rec not in ss: rec = ss[0]
-            sel = nodes(row.get("selection_nodes"), len(ss)) if isinstance(row.get("selection_nodes"), list) else {}
-            if not sel: sel = feature_nodes([x for x in raw_samples if isinstance(x, dict)])
-            out[(sid, rid, bid, diff)] = {"recommended": rec, "samples": ss, "selection": sel}
+            out[(sid, rid, bid, diff)] = {"recommended": rec, "samples": ss}
             names.setdefault(sid, txt(row.get("spec")) or str(sid))
     return names, out, diffs
 
 
-CORE = r'''local API = _G.QFXTalentData or {}
-_G.QFXTalentData = API
-API.name, API.apiVersion = "QFXTalentData", 1
-API.providers, API.manifest = API.providers or {}, API.manifest
-_G.QFXTalentData_Loaders = _G.QFXTalentData_Loaders or {}
-local function spec(id)
-  if type(id)=="number" then return id end
-  if type(GetSpecialization)~="function" or type(GetSpecializationInfo)~="function" then return nil end
-  local i=GetSpecialization(); if not i then return nil end
-  local v=GetSpecializationInfo(i); return type(v)=="number" and v or nil
-end
-function API:RegisterDataManifest(v) if type(v)~="table" then return false,"INVALID_MANIFEST" end self.manifest=v return true end
-function API:RegisterDataProvider(v) if type(v)~="table" or type(v.classToken)~="string" or type(v.specs)~="table" then return false,"INVALID_PROVIDER" end self.providers[v.classToken]=v return true end
-function API:GetManifest() return self.manifest end
-function API:GetCurrentSpecID() return spec() end
-function API:ActivateClass(classToken)
-  if self.providers[classToken] then return true end
-  local loaders=_G.QFXTalentData_Loaders; local loader=type(loaders)=="table" and loaders[classToken]
-  if type(loader)~="function" then return false,"CLASS_LOADER_MISSING" end
-  local ok,p=pcall(loader); if not ok then return false,tostring(p) end
-  local registered,reason=self:RegisterDataProvider(p); if not registered then return false,reason end
-  for k in pairs(loaders) do loaders[k]=nil end
-  _G.QFXTalentData_Loaders=nil
-  if collectgarbage then collectgarbage("collect") end
-  return true
-end
-function API:ActivateCurrentClass() local _,c=UnitClass("player"); return self:ActivateClass(c) end
-function API:GetSpecData(id) id=spec(id); if not id then return nil end for _,p in pairs(self.providers) do if p.specs[id] then return p.specs[id] end end end
-function API:GetDungeonData(dungeonID,id) local s=self:GetSpecData(id); return s and s.dungeons[dungeonID] end
-function API:GetRaidData(raidID,bossID,difficultyID,id) local s=self:GetSpecData(id); local r=s and s.raids[raidID]; local b=r and r.bosses[bossID]; return b and b.difficulties[difficultyID] end
-function API:GetRecommendedDungeonTalent(dungeonID,id) local v=self:GetDungeonData(dungeonID,id); return v and v.recommended or nil,v end
-function API:GetRecommendedRaidTalent(raidID,bossID,difficultyID,id) local v=self:GetRaidData(raidID,bossID,difficultyID,id); return v and v.recommended or nil,v end
-function API:GetDungeonSelectionRates(dungeonID,id) local v=self:GetDungeonData(dungeonID,id); return v and v.selection end
-function API:GetRaidSelectionRates(raidID,bossID,difficultyID,id) local v=self:GetRaidData(raidID,bossID,difficultyID,id); return v and v.selection end
-function API:GetAvailableRaidDifficulties(raidID,bossID,id) local s=self:GetSpecData(id); local r=s and s.raids[raidID]; local b=r and r.bosses[bossID]; local t={} for d in pairs(b and b.difficulties or {}) do t[#t+1]=d end table.sort(t) return t end
-'''
-BOOT = 'local API=_G.QFXTalentData\nif API then API:ActivateCurrentClass() end\n'
-
-
 def record(v: dict[str, Any], ind: str) -> list[str]:
-    out = [ind+"{", ind+f"  recommended = {q(v['recommended'])},", ind+f"  sampleCount = {len(v['samples'])},", ind+"  sourceRankLimit = 10,", ind+"  samples = {"]
+    out = [ind+"{", ind+f"  [\"recommended\"]={q(v['recommended'])},", ind+f"  [\"sampleCount\"]={len(v['samples'])},", ind+"  [\"samples\"]={"]
     out += [ind+f"    {q(x)}," for x in v["samples"]]
-    out += [ind+"  },", ind+"  selection = {", ind+f"    sampleCount = {len(v['samples'])},", ind+"    nodes = {"]
-    for key, choices in v["selection"].items():
-        out.append(ind+f"      [{q(key)}] = {{")
-        out += [ind+f"        {{ choice = {q(x['choice'])}, count = {x['count']}, share = {x['share']:.4f} }}," for x in choices]
-        out.append(ind+"      },")
-    return out + [ind+"    },", ind+"  },", ind+"}"]
+    return out + [ind+"  },", ind+"  [\"sourceRankLimit\"]=10,", ind+"}"]
 
 
 def common(data: dict[str, Any]) -> str:
@@ -249,32 +167,75 @@ def common(data: dict[str, Any]) -> str:
     return "\n".join(out + ["  },", "}", "local ok,reason=API:RegisterDataManifest(manifest)", "if not ok then _G.QFXTalentDataLoadError=reason end", ""])
 
 
-def class_file(data: dict[str, Any], cls: str) -> str:
-    out=["local LOADERS=_G.QFXTalentData_Loaders", "if not LOADERS then return end", f"LOADERS[{q(cls)}]=function()", "  return {", "    apiVersion=1,", f"    dataVersion={q(data['version'])},", f"    classToken={q(cls)},", "    specs={"]
-    for sid in CLASSES[cls]:
-        out += [f"      [{sid}]={{", f"        name={q(data['specNames'].get(sid,str(sid)))},", "        dungeons={"]
-        for d in data["dungeons"]:
-            v=data["mplus"].get((sid,d["id"]))
-            if v:
-                out.append(f"          [{d['id']}] =")
-                out += record(v,"          "); out[-1]+="," 
-        out += ["        },", "        raids={"]
-        for r in data["raids"]:
-            rb=[]
-            for b in r["bosses"]:
-                db=[]
-                for diff in sorted(data["diffs"]):
-                    v=data["raidData"].get((sid,r["id"],b["id"],diff))
-                    if v:
-                        db.append(f"                [{diff}] ="); db += record(v,"                "); db[-1]+="," 
-                if db: rb += [f"            [{b['id']}]={{", "              difficulties={", *db, "              },", "            },"]
-            if rb: out += [f"          [{r['id']}]={{", "            bosses={", *rb, "            },", "          },"]
-        out += ["        },", "      },"]
-    return "\n".join(out+["    },", "  }", "end", ""])
+def spec_loaders_file(data: dict[str, Any]) -> str:
+    out = [
+        "-- Generated compact specialization loaders. Do not edit manually.",
+        "",
+        "local LOADERS=_G.QFXTalentData_Loaders",
+        "if not LOADERS then return end",
+    ]
+    for sid in sorted(SPEC_CLASS):
+        cls = SPEC_CLASS[sid]
+        out += [
+            "",
+            f"-- Specialization {sid}",
+            f"LOADERS[{sid}]=function()",
+            "  return {",
+            "    [\"apiVersion\"]=1,",
+            f"    [\"classToken\"]={q(cls)},",
+            f"    [\"dataVersion\"]={q(data['version'])},",
+            "    [\"specs\"]={",
+            f"      [{sid}]={{",
+            "        [\"dungeons\"]={",
+        ]
+        for dungeon in data["dungeons"]:
+            value = data["mplus"].get((sid, dungeon["id"]))
+            if value:
+                out.append(f"          [{dungeon['id']}]={{")
+                out += record(value, "            ")[1:-1]
+                out.append("          },")
+        out += [
+            "        },",
+            f"        [\"name\"]={q(data['specNames'].get(sid, str(sid)))},",
+            "        [\"raids\"]={",
+        ]
+        for raid in data["raids"]:
+            boss_lines = []
+            for boss in raid["bosses"]:
+                difficulty_lines = []
+                for difficulty in sorted(data["diffs"]):
+                    value = data["raidData"].get((sid, raid["id"], boss["id"], difficulty))
+                    if value:
+                        difficulty_lines.append(f"                [{difficulty}]={{")
+                        difficulty_lines += record(value, "                  ")[1:-1]
+                        difficulty_lines.append("                },")
+                if difficulty_lines:
+                    boss_lines += [
+                        f"            [{boss['id']}]={{",
+                        "              [\"difficulties\"]={",
+                        *difficulty_lines,
+                        "              },",
+                        "            },",
+                    ]
+            if boss_lines:
+                out += [
+                    f"          [{raid['id']}]={{",
+                    "            [\"bosses\"]={",
+                    *boss_lines,
+                    "            },",
+                    "          },",
+                ]
+        out += [
+            "        },",
+            "      },",
+            "    },",
+            "  }",
+            "end",
+        ]
+    return "\n".join(out) + "\n"
 
 
 def toc(data):
-    files="\n".join(f"Classes\\{x}.lua" for x in CLASSES)
     return f'''## Interface: 120007
 ## Version: {data['version']}
 ## Title: |cff00ccffQFX Talent Data|r
@@ -288,7 +249,7 @@ def toc(data):
 
 Core.lua
 Common.lua
-{files}
+SpecLoaders.lua
 Bootstrap.lua
 '''
 
@@ -300,13 +261,13 @@ def build(a: argparse.Namespace):
     generated,ver=version([mr,*rr])
     data={"generated":generated,"version":ver,"seasonName":txt(mr.get("season_name")) or "Unknown season","seasonSlug":txt(mr.get("season_slug")) or "unknown","dungeons":d,"raids":raids,"diffs":diffs,"specNames":sn,"mplus":m,"raidData":rdata}
     if a.output.exists(): shutil.rmtree(a.output)
-    (a.output/"Classes").mkdir(parents=True)
-    (a.output/"Core.lua").write_text(CORE,encoding="utf-8")
+    a.output.mkdir(parents=True)
+    (a.output/"Core.lua").write_text((TEMPLATE_DIR/"Core.lua").read_text(encoding="utf-8"),encoding="utf-8")
     (a.output/"Common.lua").write_text(common(data),encoding="utf-8")
-    (a.output/"Bootstrap.lua").write_text(BOOT,encoding="utf-8")
+    (a.output/"SpecLoaders.lua").write_text(spec_loaders_file(data),encoding="utf-8")
+    (a.output/"Bootstrap.lua").write_text((TEMPLATE_DIR/"Bootstrap.lua").read_text(encoding="utf-8"),encoding="utf-8")
     (a.output/f"{ADDON}.toc").write_text(toc(data),encoding="utf-8")
-    (a.output/"README.md").write_text(f"# QFXTalentData\n\nUnified global Mythic+ and Heroic/Mythic raid talent data.\n\nVersion: `{ver}`  \nMythic+ combinations: `{len(m)}`  \nRaid combinations currently available: `{len(rdata)}`\n\nMissing early-season raid combinations are omitted until valid public data exists.\n",encoding="utf-8")
-    for cls in CLASSES: (a.output/"Classes"/f"{cls}.lua").write_text(class_file(data,cls),encoding="utf-8")
+    (a.output/"README.md").write_text(f"# QFXTalentData\n\nUnified global Mythic+ and Heroic/Mythic raid talent data.\n\nVersion: `{ver}`\n\nMythic+ combinations: `{len(m)}`\n\nRaid combinations currently available: `{len(rdata)}`\n\nMissing early-season raid combinations are omitted until valid public data exists.\n",encoding="utf-8")
     if a.zip_path:
         a.zip_path.parent.mkdir(parents=True,exist_ok=True)
         with zipfile.ZipFile(a.zip_path,"w",zipfile.ZIP_DEFLATED,compresslevel=9) as z:

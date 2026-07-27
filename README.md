@@ -92,8 +92,8 @@ The same repository also generates one independent `QFXTalentData` addon for tal
 - If a ranking row has no valid import string, collection continues farther down the ranking until ten valid samples are found or the public ranking data ends.
 - During an early tier, a boss/spec/difficulty combination with no valid public data is omitted instead of failing the whole database update. It appears automatically in a later update when data becomes available.
 - Every recommendation is one of the collected valid Blizzard import strings.
-- The generated Lua data also includes per-node or per-feature selection counts and shares, so display addons do not need to decode import strings themselves.
-- Class files use delayed loader functions; only the current player's class data table is constructed in memory.
+- The generated Lua data keeps the real import-string samples but omits duplicated precomputed selection tables; display addons derive node percentages only for the selected content.
+- One compact `SpecLoaders.lua` file registers all specialization loaders, and only the current specialization is expanded into runtime tables.
 
 The public API is `_G.QFXTalentData`. Important methods include:
 
@@ -101,8 +101,6 @@ The public API is `_G.QFXTalentData`. Important methods include:
 local API = QFXTalentData
 local dungeonCode, dungeonData = API:GetRecommendedDungeonTalent(dungeonID, specID)
 local raidCode, raidData = API:GetRecommendedRaidTalent(raidID, bossID, difficultyID, specID)
-local dungeonRates = API:GetDungeonSelectionRates(dungeonID, specID)
-local raidRates = API:GetRaidSelectionRates(raidID, bossID, difficultyID, specID)
 ```
 
 Raid difficulty IDs are stored independently (`4` Heroic and `5` Mythic). Missing data returns `nil`; the API never silently substitutes one difficulty for another.

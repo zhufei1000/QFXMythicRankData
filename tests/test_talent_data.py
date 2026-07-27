@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import zipfile
 from pathlib import Path
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "build_talent_data.py"
@@ -73,14 +74,31 @@ def test_partial_heroic_and_mythic_data_are_kept_without_full_matrix(tmp_path: P
     assert summary["mythicPlusCombinations"] == 1
     assert summary["raidCombinations"] == 1
     assert summary["raidDifficulties"] == [4, 5]
-    paladin = (args.output / "Classes" / "PALADIN.lua").read_text(encoding="utf-8")
-    assert "HEROIC" in paladin
-    assert "[4] =" in paladin
-    assert "[5] =" not in paladin
-    assert paladin.count('"AAA"') >= 3
-    assert "selection" in paladin
-    assert "GetRecommendedRaidTalent" in (args.output / "Core.lua").read_text(encoding="utf-8")
+    loaders = (args.output / "SpecLoaders.lua").read_text(encoding="utf-8")
+    core = (args.output / "Core.lua").read_text(encoding="utf-8")
+    toc = (args.output / "QFXTalentData.toc").read_text(encoding="utf-8")
+    assert "HEROIC" in loaders
+    assert "[4]={" in loaders
+    assert "[5]={" not in loaders
+    assert loaders.count('"AAA"') >= 3
+    assert "selection" not in loaders
+    assert "LOADERS[70]=function()" in loaders
+    assert "SpecLoaders.lua" in toc
+    assert "Classes\\" not in toc
+    assert not (args.output / "Classes").exists()
+    assert "ActivateSpec" in core
+    assert "ReleaseActiveSpec" in core
+    assert "ActivateCurrentSpec" in (args.output / "Bootstrap.lua").read_text(encoding="utf-8")
     assert args.zip_path.is_file()
+    with zipfile.ZipFile(args.zip_path) as archive:
+        assert set(archive.namelist()) == {
+            "QFXTalentData/Bootstrap.lua",
+            "QFXTalentData/Common.lua",
+            "QFXTalentData/Core.lua",
+            "QFXTalentData/QFXTalentData.toc",
+            "QFXTalentData/README.md",
+            "QFXTalentData/SpecLoaders.lua",
+        }
 
 
 def test_recommended_string_is_replaced_by_a_real_sample():
