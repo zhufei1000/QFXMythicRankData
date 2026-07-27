@@ -30,6 +30,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes lua5.1
 
+      - name: Compile talent pipeline
+        run: |
+          python -m py_compile \
+            scripts/collect_mythicplus_talents.py \
+            scripts/collect_raid_talents.py \
+            scripts/build_talent_data.py
+
       - name: Verify shared Core.lua synchronization
         run: python scripts/sync_core.py --check
 
@@ -47,8 +54,8 @@ jobs:
             luac5.1 -p "QFXMythicRankData_${region}/Core.lua"
             luac5.1 -p "QFXMythicRankData_${region}/Data.lua"
           done
-          if [ -d QFXMythicTalents_Data ]; then
-            find QFXMythicTalents_Data -name '*.lua' -print0 \
+          if [ -d QFXTalentData ]; then
+            find QFXTalentData -name '*.lua' -print0 \
               | xargs -0 -n1 luac5.1 -p
           fi
 
