@@ -14,6 +14,7 @@ from typing import Any
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ADDON_NAME = "QFXMythicTalents_Data"
 DEFAULT_LOCALES = ROOT / "config" / "mythic_talents_dungeons.json"
+DEFAULT_RAID_LOCALES = ROOT / "config" / "mythic_talents_raids.json"
 
 CLASS_SPECS: dict[str, tuple[int, ...]] = {
     "DEATHKNIGHT": (250, 251, 252),
@@ -138,6 +139,14 @@ def load_locales(path: pathlib.Path) -> dict[str, dict[str, Any]]:
     return {
         str(slug): require_dict(value, f"locale config {slug}")
         for slug, value in dungeons.items()
+    }
+
+
+def load_raid_locales(path: pathlib.Path) -> dict[str, dict[str, Any]]:
+    root = require_dict(json.loads(path.read_text(encoding="utf-8")), "raid locale config")
+    return {
+        str(slug): require_dict(value, f"raid locale config {slug}")
+        for slug, value in require_dict(root.get("raids"), "raid locale config raids").items()
     }
 
 
@@ -282,6 +291,158 @@ def normalize_input(
     }
 
 
+def normalize_raid_input(
+    raw: dict[str, Any],
+    locale_config: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    generated_at = require_text(raw.get("generated_at"), "raid generated_at")
+    target = raw.get("target_per_encounter_spec")
+    if not isinstance(target, int) or target <= 0:
+        raise ValueError("target_per_encounter_spec must be a positive integer")
+
+    encounter_rows = require_list(raw.get("encounters"), "raid encounters")
+    encounter_names = {
+        row["encounter_id"]: require_text(row.get("name"), "raid encounter name")
+        for value in encounter_rows
+        if isinstance((row := require_dict(value, "raid encounter")).get("encounter_id"), int)
+    }
+
+    raids: list[dict[str, Any]] = []
+    encounter_to_raid: dict[int, int] = {}
+    boss_ids: set[int] = set()
+    for slug, configured in locale_config.items():
+        raid_id = configured.get("id")
+        if not isinstance(raid_id, int) or raid_id <= 0:
+            raise ValueError(f"raid {slug} must have a positive id")
+        names = require_dict(configured.get("names"), f"raid {slug} names")
+        en_name = require_text(names.get("enUS"), f"raid {slug} enUS name")
+        normalized_names = {
+            locale: require_text(value, f"raid {slug} {locale} name")
+            for locale, value in names.items()
+            if locale in {"enUS", "zhCN", "zhTW"}
+        }
+        aliases: list[str] = []
+        for alias in [en_name, slug, *normalized_names.values(), *configured.get("aliases", [])]:
+            if isinstance(alias, str) and alias.strip() and alias.strip() not in aliases:
+                aliases.append(alias.strip())
+
+        bosses: list[dict[str, Any]] = []
+        for boss_key, boss_value in require_dict(
+            configured.get("bosses"), f"raid {slug} bosses"
+        ).items():
+            try:
+                boss_id = int(boss_key)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"raid {slug} boss ID {boss_key!r} is invalid") from exc
+            if boss_id not in encounter_names:
+                raise ValueError(f"raid config boss {boss_id} is missing from WCL encounters")
+            if boss_id in boss_ids:
+                raise ValueError(f"duplicate raid boss ID {boss_id}")
+            boss_ids.add(boss_id)
+            encounter_to_raid[boss_id] = raid_id
+            boss = require_dict(boss_value, f"raid {slug} boss {boss_id}")
+            boss_names = require_dict(boss.get("names"), f"raid {slug} boss {boss_id} names")
+            normalized_boss_names = {
+                locale: require_text(value, f"raid {slug} boss {boss_id} {locale} name")
+                for locale, value in boss_names.items()
+                if locale in {"enUS", "zhCN", "zhTW"}
+            }
+            normalized_boss_names["enUS"] = encounter_names[boss_id]
+            bosses.append(
+                {
+                    "id": boss_id,
+                    "slug": require_text(boss.get("slug"), f"raid boss {boss_id} slug"),
+                    "name": encounter_names[boss_id],
+                    "names": normalized_boss_names,
+                }
+            )
+        raids.append(
+            {
+                "id": raid_id,
+                "slug": slug,
+                "name": en_name,
+                "names": normalized_names,
+                "aliases": aliases,
+                "bosses": bosses,
+            }
+        )
+
+    if boss_ids != set(encounter_names):
+        raise ValueError(
+            f"raid locale config does not exactly cover WCL encounters: "
+            f"missing={sorted(set(encounter_names) - boss_ids)} extra={sorted(boss_ids - set(encounter_names))}"
+        )
+
+    recommendations: dict[tuple[int, int, int], dict[str, Any]] = {}
+    spec_names: dict[int, str] = {}
+    for index, value in enumerate(require_list(raw.get("recommendations"), "raid recommendations")):
+        row = require_dict(value, f"raid recommendations[{index}]")
+        spec_id = row.get("spec_id")
+        boss_id = row.get("encounter_id")
+        if spec_id not in ALL_SPEC_IDS or boss_id not in boss_ids:
+            raise ValueError(f"raid recommendation references unknown spec/boss {spec_id}/{boss_id}")
+        spec_names[spec_id] = require_text(row.get("spec"), f"raid spec {spec_id}")
+        raid_id = encounter_to_raid[boss_id]
+        key = (spec_id, raid_id, boss_id)
+        if key in recommendations:
+            raise ValueError(f"duplicate raid recommendation {key}")
+        recommended = require_text(
+            row.get("recommended_loadout"),
+            f"raid recommendations[{index}].recommended_loadout",
+        )
+        samples = [
+            require_text(
+                require_dict(sample, "raid sample").get("loadout"),
+                f"raid recommendations[{index}] sample loadout",
+            )
+            for sample in require_list(row.get("samples"), f"raid recommendations[{index}].samples")
+        ]
+        if len(samples) < target:
+            raise ValueError(f"raid recommendation {key} has {len(samples)} samples; expected {target}")
+        samples = samples[:target]
+        if recommended not in samples:
+            raise ValueError(f"raid recommended loadout for {key} is not one of its samples")
+        recommendations[key] = {
+            "recommended": recommended,
+            "samples": samples,
+            "sample_count": len(samples),
+        }
+
+    expected = {
+        (spec_id, raid["id"], boss["id"])
+        for spec_id in ALL_SPEC_IDS
+        for raid in raids
+        for boss in raid["bosses"]
+    }
+    if set(recommendations) != expected:
+        raise ValueError(
+            f"incomplete raid recommendation matrix: "
+            f"missing={sorted(expected - set(recommendations))[:10]} "
+            f"extra={sorted(set(recommendations) - expected)[:10]}"
+        )
+    if raw.get("combinations_at_target") != len(expected):
+        raise ValueError("WCL collector did not report complete raid target coverage")
+
+    return {
+        "generated_at": generated_at,
+        "target": target,
+        "raids": raids,
+        "spec_names": spec_names,
+        "recommendations": recommendations,
+    }
+
+
+def merge_raid_data(data: dict[str, Any], raid: dict[str, Any]) -> None:
+    if set(raid["spec_names"]) != set(data["spec_names"]):
+        raise ValueError("raid and dungeon specialization sets differ")
+    latest = max(data["generated_at"], raid["generated_at"])
+    data["generated_at"] = latest
+    data["data_version"] = data_version(latest)
+    data["raids"] = raid["raids"]
+    data["raid_target"] = raid["target"]
+    data["raid_recommendations"] = raid["recommendations"]
+
+
 def render_common(data: dict[str, Any]) -> str:
     lines = [
         "_G.QFXMythicTalents_DataLoaders = _G.QFXMythicTalents_DataLoaders or {}",
@@ -295,7 +456,7 @@ def render_common(data: dict[str, Any]) -> str:
         f"  generatedAt = {lua_string(data['generated_at'])},",
         f"  seasonName = {lua_string(data['season_name'])},",
         f"  seasonSlug = {lua_string(data['season_slug'])},",
-        '  source = "Raider.IO Mythic+ rankings",',
+        f"  source = {lua_string('Raider.IO Mythic+ rankings + Warcraft Logs raid rankings' if data.get('raids') else 'Raider.IO Mythic+ rankings')},",
         "  dungeons = {",
     ]
     for dungeon in data["dungeons"]:
@@ -313,9 +474,41 @@ def render_common(data: dict[str, Any]) -> str:
                 "    },",
             ]
         )
+    lines.append("  },")
+    if data.get("raids"):
+        lines.append("  raids = {")
+        for raid in data["raids"]:
+            names = ", ".join(
+                f"{region} = {lua_string(value)}"
+                for region, value in raid["names"].items()
+            )
+            aliases = ", ".join(lua_string(value) for value in raid["aliases"])
+            lines.extend(
+                [
+                    "    {",
+                    f"      id = {raid['id']}, slug = {lua_string(raid['slug'])},",
+                    f"      names = {{ {names}, }},",
+                    f"      aliases = {{{aliases}}},",
+                    "      bosses = {",
+                ]
+            )
+            for boss in raid["bosses"]:
+                boss_names = ", ".join(
+                    f"{region} = {lua_string(value)}"
+                    for region, value in boss["names"].items()
+                )
+                lines.extend(
+                    [
+                        "        {",
+                        f"          id = {boss['id']}, slug = {lua_string(boss['slug'])},",
+                        f"          names = {{ {boss_names}, }},",
+                        "        },",
+                    ]
+                )
+            lines.extend(["      },", "    },"])
+        lines.append("  },")
     lines.extend(
         [
-            "  },",
             "}",
             "",
             "local registered, reason = API:RegisterDataManifest(manifest)",
@@ -342,8 +535,12 @@ def render_class(data: dict[str, Any], class_token: str) -> str:
         "    specs = {",
     ]
     for spec_id in CLASS_SPECS[class_token]:
-        lines.append(
-            f"      [{spec_id}] = {{ name = {lua_string(data['spec_names'][spec_id])}, dungeons = {{"
+        lines.extend(
+            [
+                f"      [{spec_id}] = {{",
+                f"        name = {lua_string(data['spec_names'][spec_id])},",
+                "        dungeons = {",
+            ]
         )
         for dungeon in data["dungeons"]:
             recommendation = recommendations[(spec_id, dungeon["id"])]
@@ -359,7 +556,29 @@ def render_class(data: dict[str, Any], class_token: str) -> str:
                 f"            {lua_string(sample)}," for sample in recommendation["samples"]
             )
             lines.extend(["          },", "        },"])
-        lines.extend(["      }},", ""])
+        lines.append("        },")
+        if data.get("raids"):
+            lines.append("        raids = {")
+            for raid in data["raids"]:
+                lines.extend([f"          [{raid['id']}] = {{", "            bosses = {"])
+                for boss in raid["bosses"]:
+                    recommendation = data["raid_recommendations"][(spec_id, raid["id"], boss["id"])]
+                    lines.extend(
+                        [
+                            f"              [{boss['id']}] = {{",
+                            f"                recommended = {lua_string(recommendation['recommended'])},",
+                            f"                sampleCount = {recommendation['sample_count']},",
+                            "                samples = {",
+                        ]
+                    )
+                    lines.extend(
+                        f"                  {lua_string(sample)},"
+                        for sample in recommendation["samples"]
+                    )
+                    lines.extend(["                },", "              },"])
+                lines.extend(["            },", "          },"])
+            lines.append("        },")
+        lines.extend(["      },", ""])
     lines.extend(["    },", "  }", "end", ""])
     return "\n".join(lines)
 
@@ -370,9 +589,9 @@ def render_toc(data: dict[str, Any]) -> str:
         "## Interface: 120007\n"
         f"## Version: {data['data_version']}\n"
         "## Title: |cff00ccffQFX Mythic Talents Data|r\n"
-        "## Notes: Automatically generated Mythic+ talent recommendations for QFX Mythic Talents.\n"
-        "## Notes-zhCN: QFX大秘境天赋自动生成数据库，按当前职业延迟构建数据。\n"
-        "## Notes-zhTW: QFX傳奇鑰石天賦自動產生資料庫，依目前職業延遲建立資料。\n"
+        "## Notes: Automatically generated Mythic+ and raid boss talent recommendations for QFX Mythic Talents.\n"
+        "## Notes-zhCN: QFX大秘境与团本首领天赋自动生成数据库，按当前职业延迟构建数据。\n"
+        "## Notes-zhTW: QFX傳奇鑰石與團隊首領天賦自動產生資料庫，依目前職業延遲建立資料。\n"
         "## Author: QFX\n"
         "## Dependencies: QFXMythicTalents\n"
         "## X-QFX-Data-API: 1\n"
@@ -385,6 +604,9 @@ def render_toc(data: dict[str, Any]) -> str:
 
 
 def render_readme(data: dict[str, Any]) -> str:
+    raid_count = len(data.get("raids", []))
+    boss_count = sum(len(raid["bosses"]) for raid in data.get("raids", []))
+    raid_samples = boss_count * len(ALL_SPEC_IDS) * data.get("raid_target", 0)
     return (
         "# QFX Mythic Talents Data\n\n"
         "Automatically generated database addon for QFX Mythic Talents.\n\n"
@@ -392,9 +614,12 @@ def render_readme(data: dict[str, Any]) -> str:
         f"- Generated: {data['generated_at']}\n"
         f"- Season: {data['season_name']} (`{data['season_slug']}`)\n"
         f"- Dungeons: {len(data['dungeons'])}\n"
+        f"- Raids: {raid_count}\n"
+        f"- Raid bosses: {boss_count}\n"
         f"- Specializations: {len(ALL_SPEC_IDS)}\n"
         f"- Samples per specialization/dungeon: {data['target']}\n"
-        f"- Total samples: {len(data['dungeons']) * len(ALL_SPEC_IDS) * data['target']}\n\n"
+        f"- Samples per specialization/raid boss: {data.get('raid_target', 0)}\n"
+        f"- Total samples: {len(data['dungeons']) * len(ALL_SPEC_IDS) * data['target'] + raid_samples}\n\n"
         "Character identifiers from the collector output are not included in this addon.\n"
     )
 
@@ -452,11 +677,13 @@ def validate_addon(addon: pathlib.Path, data: dict[str, Any]) -> None:
     toc = (addon / f"{ADDON_NAME}.toc").read_text(encoding="utf-8")
     if f"## X-QFX-Data-Version: {data['data_version']}" not in toc:
         raise ValueError("TOC data version mismatch")
+    boss_count = sum(len(raid["bosses"]) for raid in data.get("raids", []))
     for class_token, spec_ids in CLASS_SPECS.items():
         text = (addon / "Classes" / f"{class_token}.lua").read_text(encoding="utf-8")
-        if text.count("sampleCount = ") != len(spec_ids) * len(data["dungeons"]):
+        expected_count = len(spec_ids) * (len(data["dungeons"]) + boss_count)
+        if text.count("sampleCount = ") != expected_count:
             raise ValueError(f"generated class coverage mismatch for {class_token}")
-        if "character_key" in text:
+        if any(private_key in text for private_key in ("character_key", "talentID", "points =")):
             raise ValueError(f"private collector metadata leaked into {class_token}")
 
 
@@ -466,6 +693,8 @@ def build(
     locales_path: pathlib.Path = DEFAULT_LOCALES,
     zip_path: pathlib.Path | None = None,
     *,
+    raid_input_path: pathlib.Path | None = None,
+    raid_locales_path: pathlib.Path = DEFAULT_RAID_LOCALES,
     allow_missing_locales: bool = False,
 ) -> dict[str, Any]:
     data = normalize_input(
@@ -473,17 +702,30 @@ def build(
         load_locales(locales_path),
         allow_missing_locales=allow_missing_locales,
     )
+    if raid_input_path:
+        merge_raid_data(
+            data,
+            normalize_raid_input(
+                load_input(raid_input_path),
+                load_raid_locales(raid_locales_path),
+            ),
+        )
     write_addon(data, output)
     validate_addon(output, data)
     if zip_path:
         build_zip(output, zip_path)
+    boss_count = sum(len(raid["bosses"]) for raid in data.get("raids", []))
+    raid_samples = boss_count * len(ALL_SPEC_IDS) * data.get("raid_target", 0)
     return {
         "addon": ADDON_NAME,
         "version": data["data_version"],
         "dungeons": len(data["dungeons"]),
+        "raids": len(data.get("raids", [])),
+        "raid_bosses": boss_count,
         "specializations": len(ALL_SPEC_IDS),
         "samples_per_combination": data["target"],
-        "total_samples": len(data["dungeons"]) * len(ALL_SPEC_IDS) * data["target"],
+        "raid_samples_per_combination": data.get("raid_target", 0),
+        "total_samples": len(data["dungeons"]) * len(ALL_SPEC_IDS) * data["target"] + raid_samples,
         "output": str(output),
         "zip": str(zip_path) if zip_path else None,
     }
@@ -496,6 +738,8 @@ def main() -> int:
     parser.add_argument("--input", type=pathlib.Path, required=True)
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--locales", type=pathlib.Path, default=DEFAULT_LOCALES)
+    parser.add_argument("--raid-input", type=pathlib.Path)
+    parser.add_argument("--raid-locales", type=pathlib.Path, default=DEFAULT_RAID_LOCALES)
     parser.add_argument("--zip", dest="zip_path", type=pathlib.Path)
     parser.add_argument("--allow-missing-locales", action="store_true")
     args = parser.parse_args()
@@ -504,6 +748,8 @@ def main() -> int:
         args.output,
         args.locales,
         args.zip_path,
+        raid_input_path=args.raid_input,
+        raid_locales_path=args.raid_locales,
         allow_missing_locales=args.allow_missing_locales,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))

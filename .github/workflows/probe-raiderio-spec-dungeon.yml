@@ -10,8 +10,10 @@ on:
       - scripts/probe_raiderio_spec_dungeon_v3.py
       - scripts/probe_raiderio_spec_dungeon_v4.py
       - scripts/probe_wcl_raid_talents_v1.py
+      - scripts/wcl_talent_export.py
       - scripts/build_mythic_talents_data.py
       - config/mythic_talents_dungeons.json
+      - config/mythic_talents_raids.json
       - .github/workflows/probe-raiderio-spec-dungeon.yml
   pull_request:
     paths:
@@ -19,8 +21,10 @@ on:
       - scripts/probe_raiderio_spec_dungeon_v3.py
       - scripts/probe_raiderio_spec_dungeon_v4.py
       - scripts/probe_wcl_raid_talents_v1.py
+      - scripts/wcl_talent_export.py
       - scripts/build_mythic_talents_data.py
       - config/mythic_talents_dungeons.json
+      - config/mythic_talents_raids.json
       - .github/workflows/probe-raiderio-spec-dungeon.yml
   workflow_dispatch:
     inputs:
@@ -147,6 +151,7 @@ jobs:
       - name: Compile WCL raid probe
         run: |
           python -m py_compile scripts/probe_raiderio_spec_dungeon_v2.py
+          python -m py_compile scripts/wcl_talent_export.py
           python -m py_compile scripts/probe_wcl_raid_talents_v1.py
 
       - name: Check WCL credentials

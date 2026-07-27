@@ -18,7 +18,7 @@ env:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
@@ -38,14 +38,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes lua5.1
 
-      - name: Require Raider.IO access key
+      - name: Require data-source credentials
         shell: bash
         env:
           RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
         run: |
           set -euo pipefail
           if [[ -z "${RAIDERIO_ACCESS_KEY}" ]]; then
             echo "::error::Repository secret RAIDERIO_ACCESS_KEY is missing."
+            exit 1
+          fi
+          if [[ -z "${WCL_CLIENT_ID}" || -z "${WCL_CLIENT_SECRET}" ]]; then
+            echo "::error::Repository secrets WCL_CLIENT_ID and WCL_CLIENT_SECRET are required."
             exit 1
           fi
 
@@ -54,10 +60,19 @@ jobs:
           RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
         run: python scripts/probe_raiderio_spec_dungeon_v4.py
 
+      - name: Collect top-ten raid boss talent samples
+        env:
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
+          WCL_TARGET: "10"
+          WCL_MAX_PAGES: "3"
+        run: python scripts/probe_wcl_raid_talents_v1.py
+
       - name: Generate database addon and package
         run: |
           python scripts/build_mythic_talents_data.py \
             --input artifacts/raiderio_mainstream_talents_v4.json \
+            --raid-input artifacts/wcl_raid_talents_v1.json \
             --output QFXMythicTalents_Data \
             --zip "artifacts/QFXMythicTalents_Data-${{ github.run_id }}.zip"
 
@@ -71,6 +86,10 @@ jobs:
         shell: bash
         run: |
           cat artifacts/raiderio_mainstream_talents_v4.md >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo
+            cat artifacts/wcl_raid_talents_v1.md
+          } >> "$GITHUB_STEP_SUMMARY"
           {
             echo
             echo "## Generated database addon"
@@ -88,7 +107,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "Generated database is unchanged."
           else
-            git commit -m "Update Mythic+ talent database ${version} [skip ci]"
+            git commit -m "Update Mythic+ and raid talent database ${version} [skip ci]"
             git push
           fi
 
@@ -100,5 +119,7 @@ jobs:
             artifacts/QFXMythicTalents_Data-${{ github.run_id }}.zip
             artifacts/raiderio_mainstream_talents_v4.json
             artifacts/raiderio_mainstream_talents_v4.md
+            artifacts/wcl_raid_talents_v1.json
+            artifacts/wcl_raid_talents_v1.md
           if-no-files-found: error
           retention-days: 30

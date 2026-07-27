@@ -56,6 +56,60 @@ def collector_result() -> dict:
     }
 
 
+def raid_collector_result() -> dict:
+    recommendations = []
+    for spec_id in sorted(builder.ALL_SPEC_IDS):
+        first = f"raid-loadout-{spec_id}-a"
+        second = f"raid-loadout-{spec_id}-b"
+        recommendations.append(
+            {
+                "encounter_id": 9001,
+                "encounter": "Test Boss",
+                "spec_id": spec_id,
+                "spec": f"Spec {spec_id}",
+                "recommended_loadout": first,
+                "samples": [
+                    {"character": f"private-{spec_id}", "loadout": first},
+                    {"character": f"private-{spec_id}-2", "loadout": second},
+                ],
+            }
+        )
+    return {
+        "generated_at": "2026-07-27T09:15:00+00:00",
+        "target_per_encounter_spec": 2,
+        "encounters": [{"encounter_id": 9001, "name": "Test Boss"}],
+        "recommendations": recommendations,
+        "total_combinations": len(builder.ALL_SPEC_IDS),
+        "combinations_at_target": len(builder.ALL_SPEC_IDS),
+    }
+
+
+def raid_locale_config() -> dict:
+    return {
+        "raids": {
+            "test-raid": {
+                "id": 7001,
+                "names": {
+                    "enUS": "Test Raid",
+                    "zhCN": "测试团本",
+                    "zhTW": "測試團隊",
+                },
+                "aliases": ["Test"],
+                "bosses": {
+                    "9001": {
+                        "slug": "test-boss",
+                        "names": {
+                            "enUS": "Test Boss",
+                            "zhCN": "测试首领",
+                            "zhTW": "測試首領",
+                        },
+                    }
+                },
+            }
+        }
+    }
+
+
 def write_json(path: pathlib.Path, value: dict) -> None:
     path.write_text(json.dumps(value), encoding="utf-8")
 
@@ -105,6 +159,41 @@ def test_rejects_recommendation_without_target_samples(
     write_json(source, value)
     with pytest.raises(ValueError, match="expected 2"):
         builder.build(source, tmp_path / builder.ADDON_NAME)
+
+
+def test_builds_raid_boss_recommendations_with_strings_only(
+    tmp_path: pathlib.Path,
+) -> None:
+    dungeon_source = tmp_path / "dungeon.json"
+    raid_source = tmp_path / "raid.json"
+    raid_locales = tmp_path / "raids.json"
+    output = tmp_path / builder.ADDON_NAME
+    write_json(dungeon_source, collector_result())
+    write_json(raid_source, raid_collector_result())
+    write_json(raid_locales, raid_locale_config())
+
+    result = builder.build(
+        dungeon_source,
+        output,
+        raid_input_path=raid_source,
+        raid_locales_path=raid_locales,
+    )
+
+    assert result["raids"] == 1
+    assert result["raid_bosses"] == 1
+    assert result["raid_samples_per_combination"] == 2
+    assert result["total_samples"] == len(builder.ALL_SPEC_IDS) * 4
+    common = (output / "Common.lua").read_text(encoding="utf-8")
+    classes = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (output / "Classes").glob("*.lua")
+    )
+    assert 'slug = "test-raid"' in common
+    assert "[9001] = {" in classes
+    assert "raid-loadout-" in classes
+    assert "private-" not in classes
+    assert "talentID" not in classes
+    assert "points =" not in classes
 
 
 def find_lua() -> str | None:

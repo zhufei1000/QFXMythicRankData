@@ -9,12 +9,13 @@ import re
 import sys
 import time
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Iterable
 
 import requests
 
 import probe_raiderio_spec_dungeon_v2 as rio_core
+from wcl_talent_export import DEFAULT_TALENTS_URL, TalentExporter, TalentExportError
 
 TOKEN_URL = "https://www.warcraftlogs.com/oauth/token"
 GRAPHQL_URL = "https://www.warcraftlogs.com/api/v2/client"
@@ -24,6 +25,7 @@ MAX_PAGES = int(os.environ.get("WCL_MAX_PAGES", "3"))
 ZONE_OVERRIDE = int(os.environ["WCL_ZONE_ID"]) if os.environ.get("WCL_ZONE_ID", "").strip() else None
 DIFFICULTY_OVERRIDE = int(os.environ["WCL_DIFFICULTY"]) if os.environ.get("WCL_DIFFICULTY", "").strip() else None
 REQUEST_DELAY = float(os.environ.get("WCL_REQUEST_DELAY", "0.35"))
+TALENTS_URL = os.environ.get("RAIDBOTS_TALENTS_URL", DEFAULT_TALENTS_URL).strip()
 
 OUT = pathlib.Path("artifacts")
 JSON_OUT = OUT / "wcl_raid_talents_v1.json"
@@ -449,13 +451,9 @@ def parse_sample(row: dict[str, Any]) -> TalentSample | None:
     )
 
 
-def spread_rows(rows: list[dict[str, Any]], stride: int = 5) -> Iterable[dict[str, Any]]:
-    if len(rows) <= TARGET:
-        return rows
-    order: list[int] = []
-    for offset in range(stride):
-        order.extend(range(offset, len(rows), stride))
-    return (rows[index] for index in order)
+def ranked_rows(rows: list[dict[str, Any]]) -> Iterable[dict[str, Any]]:
+    """Preserve WCL ranking order so the retained samples are the actual top ten."""
+    return rows
 
 
 def recommendation(samples: dict[str, TalentSample]) -> dict[str, Any]:
@@ -516,7 +514,6 @@ def recommendation(samples: dict[str, TalentSample]) -> dict[str, Any]:
                 "fight_id": sample.fight_id,
                 "loadout": sample.loadout_text,
                 "features": sorted(sample.features),
-                "talent_payload": sample.talent_payload,
             }
             for sample in ordered
         ],
@@ -601,6 +598,10 @@ def main() -> int:
     started = time.monotonic()
     OUT.mkdir(parents=True, exist_ok=True)
     client = WCLClient(CLIENT_ID, CLIENT_SECRET)
+    talent_exporter = TalentExporter.download(
+        url=TALENTS_URL,
+        cache_path=OUT / "raidbots_talents_live.json",
+    )
 
     meta = client.query(META_QUERY, {}, kind="raid-meta")
     zones = ((meta.get("worldData") or {}).get("zones")) if isinstance(meta.get("worldData"), dict) else None
@@ -657,8 +658,18 @@ def main() -> int:
                         "top_level_keys": sorted(raw.keys()),
                         "first_row_keys": sorted(rows[0].keys()) if rows else [],
                     })
-                for row in spread_rows(rows):
+                for row in ranked_rows(rows):
                     sample = parse_sample(row)
+                    if sample and not sample.loadout_text:
+                        try:
+                            sample = replace(
+                                sample,
+                                loadout_text=talent_exporter.encode_payload(spec_id, sample.talent_payload),
+                            )
+                        except TalentExportError as exc:
+                            raise RuntimeError(
+                                f"cannot serialize {display} talents for {encounter.get('name')}: {exc}"
+                            ) from exc
                     if sample and sample.identity not in samples[encounter_id][spec_id]:
                         samples[encounter_id][spec_id][sample.identity] = sample
                         if len(samples[encounter_id][spec_id]) >= TARGET:
@@ -744,6 +755,7 @@ def main() -> int:
     result = {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "source": "Warcraft Logs public GraphQL API v2",
+        "talent_tree_source": TALENTS_URL,
         "zone_id": zone.get("id"),
         "zone_name": zone.get("name"),
         "expansion": zone.get("expansion"),
@@ -753,7 +765,7 @@ def main() -> int:
             (value for value in zone.get("partitions") or [] if isinstance(value, dict) and value.get("default")),
             None,
         ),
-        "strategy": "fixed 10 spread samples from public encounter rankings with includeCombatantInfo; representative real sample nearest majority talent features",
+        "strategy": "top 10 valid ranked characters from public encounter rankings with includeCombatantInfo; representative real sample nearest majority talent features",
         "target_per_encounter_spec": TARGET,
         "max_pages_per_combo": MAX_PAGES,
         "http_requests": client.requests,

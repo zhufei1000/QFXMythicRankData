@@ -111,6 +111,12 @@ python scripts/update_cn_data.py
 
 `RAIDERIO_ACCESS_KEY` is optional. `RAIDERIO_SEASON` can provide an explicit season slug, and `RAIDERIO_EXPANSION_ID` can override the default expansion id `11`.
 
+The QFX Mythic Talents database uses Raider.IO run details for Mythic+ and
+Warcraft Logs encounter rankings for raid bosses. Set `WCL_CLIENT_ID` and
+`WCL_CLIENT_SECRET` for the raid collector. WCL combatant talent entries are
+converted to Blizzard import strings with the current Raidbots talent tree
+metadata; the generated addon contains import strings only.
+
 `shared/Core.lua` is the only maintained API core. Run `python scripts/sync_core.py` after changing it, or use `--check` to verify that all five addon copies are identical.
 
 ## Automation and packages
