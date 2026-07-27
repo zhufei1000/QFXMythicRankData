@@ -1,0 +1,128 @@
+{
+  "raids": {
+    "the-voidspire": {
+      "id": 1307,
+      "names": {
+        "enUS": "The Voidspire",
+        "zhCN": "虚影尖塔",
+        "zhTW": "虛無之尖"
+      },
+      "aliases": ["Voidspire", "虚影尖塔", "虛無之尖"],
+      "bosses": {
+        "3176": {
+          "slug": "imperator-averzian",
+          "names": {
+            "enUS": "Imperator Averzian",
+            "zhCN": "元首阿福扎恩",
+            "zhTW": "元首阿弗茲安"
+          }
+        },
+        "3177": {
+          "slug": "vorasius",
+          "names": {
+            "enUS": "Vorasius",
+            "zhCN": "弗拉希乌斯",
+            "zhTW": "沃拉修斯"
+          }
+        },
+        "3179": {
+          "slug": "fallen-king-salhadaar",
+          "names": {
+            "enUS": "Fallen-King Salhadaar",
+            "zhCN": "陨落之王萨哈达尔",
+            "zhTW": "墮落之王薩哈達爾"
+          }
+        },
+        "3178": {
+          "slug": "vaelgor-and-ezzorak",
+          "names": {
+            "enUS": "Vaelgor & Ezzorak",
+            "zhCN": "威厄高尔和艾佐拉克",
+            "zhTW": "維爾戈與艾佐拉克"
+          }
+        },
+        "3180": {
+          "slug": "lightblinded-vanguard",
+          "names": {
+            "enUS": "Lightblinded Vanguard",
+            "zhCN": "光盲先锋军",
+            "zhTW": "盲光先鋒"
+          }
+        },
+        "3181": {
+          "slug": "crown-of-the-cosmos",
+          "names": {
+            "enUS": "Crown of the Cosmos",
+            "zhCN": "宇宙之冕",
+            "zhTW": "宇宙之冠"
+          }
+        }
+      }
+    },
+    "the-dreamrift": {
+      "id": 1314,
+      "names": {
+        "enUS": "The Dreamrift",
+        "zhCN": "梦境裂隙",
+        "zhTW": "夢境裂隙"
+      },
+      "aliases": ["Dreamrift", "梦境裂隙", "夢境裂隙"],
+      "bosses": {
+        "3306": {
+          "slug": "chimaerus",
+          "names": {
+            "enUS": "Chimaerus, the Undreamt God",
+            "zhCN": "奇美鲁斯，未梦之神",
+            "zhTW": "奇美拉斯，未夢之神"
+          }
+        }
+      }
+    },
+    "march-on-queldanas": {
+      "id": 1308,
+      "names": {
+        "enUS": "March on Quel'Danas",
+        "zhCN": "进军奎尔丹纳斯",
+        "zhTW": "進軍奎爾達納斯"
+      },
+      "aliases": ["Quel'Danas", "March on Quel'Danas", "进军奎尔丹纳斯", "進軍奎爾達納斯"],
+      "bosses": {
+        "3182": {
+          "slug": "beloren-child-of-alar",
+          "names": {
+            "enUS": "Belo'ren, Child of Al'ar",
+            "zhCN": "贝洛朗，奥的子嗣",
+            "zhTW": "貝洛倫，歐爾之子"
+          }
+        },
+        "3183": {
+          "slug": "midnight-falls",
+          "names": {
+            "enUS": "Midnight Falls",
+            "zhCN": "至暗之夜降临",
+            "zhTW": "午夜降臨"
+          }
+        }
+      }
+    },
+    "sporefall": {
+      "id": 2427,
+      "names": {
+        "enUS": "Sporefall",
+        "zhCN": "孢陨幽境",
+        "zhTW": "孢殞幽境"
+      },
+      "aliases": ["Sporefall", "孢陨幽境", "孢殞幽境"],
+      "bosses": {
+        "3159": {
+          "slug": "rotmire",
+          "names": {
+            "enUS": "Rotmire",
+            "zhCN": "腐沼",
+            "zhTW": "腐沼"
+          }
+        }
+      }
+    }
+  }
+}
