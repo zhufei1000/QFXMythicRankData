@@ -34,7 +34,7 @@ Schema Version 2 stores normalized source data for:
 - source-provided keystone bracket levels and season remapping status
 - Raider.IO score color tiers
 
-The packages contain no player names, realms, full leaderboard, dungeon-run members, equipment, talents, class statistics, or current affix schedule. Historical points are stored exactly as normalized source points: the database does not calculate daily changes, faction ratios, cross-region comparisons, or display results.
+The regional rank packages contain no player names, realms, full leaderboard, dungeon-run members, equipment, talents, class statistics, or current affix schedule. Historical points are stored exactly as normalized source points: the database does not calculate daily changes, faction ratios, cross-region comparisons, or display results.
 
 Rank results are estimates derived from published percentile score cutoffs. They are not exact character leaderboard positions and should always be presented as estimates.
 
@@ -83,6 +83,30 @@ The compatible API methods are:
 
 Supported cutoff keys are `p999`, `p990`, `p900`, `p750`, and `p600`. Supported factions are `all`, `horde`, and `alliance`.
 
+## QFXTalentData
+
+The same repository also generates one independent `QFXTalentData` addon for talent recommendations. It is not split by region:
+
+- Mythic+ uses the global Raider.IO specialization rankings and keeps ten valid logged-run talent samples for every dungeon and specialization.
+- Raid data uses the global Warcraft Logs rankings and stores Heroic and Mythic separately for every boss and specialization.
+- If a ranking row has no valid import string, collection continues farther down the ranking until ten valid samples are found or the public ranking data ends.
+- During an early tier, a boss/spec/difficulty combination with no valid public data is omitted instead of failing the whole database update. It appears automatically in a later update when data becomes available.
+- Every recommendation is one of the collected valid Blizzard import strings.
+- The generated Lua data also includes per-node or per-feature selection counts and shares, so display addons do not need to decode import strings themselves.
+- Class files use delayed loader functions; only the current player's class data table is constructed in memory.
+
+The public API is `_G.QFXTalentData`. Important methods include:
+
+```lua
+local API = QFXTalentData
+local dungeonCode, dungeonData = API:GetRecommendedDungeonTalent(dungeonID, specID)
+local raidCode, raidData = API:GetRecommendedRaidTalent(raidID, bossID, difficultyID, specID)
+local dungeonRates = API:GetDungeonSelectionRates(dungeonID, specID)
+local raidRates = API:GetRaidSelectionRates(raidID, bossID, difficultyID, specID)
+```
+
+Raid difficulty IDs are stored independently (`4` Heroic and `5` Mythic). Missing data returns `nil`; the API never silently substitutes one difficulty for another.
+
 ## Development
 
 Install dependencies and verify the source tree:
@@ -94,14 +118,14 @@ python scripts/sync_core.py --check
 python -m pytest -v
 ```
 
-Update all five regions from Raider.IO and build installable packages:
+Update all five regional rank packages from Raider.IO and build installable packages:
 
 ```bash
 python scripts/update_all_regions.py
 python scripts/build_packages.py
 ```
 
-Build only selected regional packages with `--regions`, for example `python scripts/build_packages.py --regions cn`.
+Build only selected regions with `--regions`, for example `python scripts/build_packages.py --regions cn`.
 
 The original CN command remains compatible:
 
@@ -109,20 +133,16 @@ The original CN command remains compatible:
 python scripts/update_cn_data.py
 ```
 
-`RAIDERIO_ACCESS_KEY` is optional. `RAIDERIO_SEASON` can provide an explicit season slug, and `RAIDERIO_EXPANSION_ID` can override the default expansion id `11`.
+`RAIDERIO_ACCESS_KEY` is optional for the regional rank updater. `RAIDERIO_SEASON` can provide an explicit season slug, and `RAIDERIO_EXPANSION_ID` can override the default expansion id `11`.
 
-The QFX Mythic Talents database uses Raider.IO run details for Mythic+ and
-Warcraft Logs encounter rankings for raid bosses. Set `WCL_CLIENT_ID` and
-`WCL_CLIENT_SECRET` for the raid collector. WCL combatant talent entries are
-converted to Blizzard import strings with the current Raidbots talent tree
-metadata. Ranking rows captured against an outdated tree are skipped instead of
-publishing incomplete strings; the collector continues in ranking order until
-ten valid samples are found. The generated addon contains import strings only.
+The talent pipeline uses `RAIDERIO_ACCESS_KEY` when available and requires `WCL_CLIENT_ID` plus `WCL_CLIENT_SECRET` to collect raid data. WCL combatant talent entries are converted to current Blizzard import strings using the current Raidbots talent tree metadata. Rows captured against an outdated talent tree are skipped rather than publishing incomplete strings.
 
-`shared/Core.lua` is the only maintained API core. Run `python scripts/sync_core.py` after changing it, or use `--check` to verify that all five addon copies are identical.
+`shared/Core.lua` is the only maintained regional rank API core. Run `python scripts/sync_core.py` after changing it, or use `--check` to verify that all five regional addon copies are identical.
 
 ## Automation and packages
 
-The `Update Regional Mythic Rank Data` GitHub Actions workflow runs twice daily at 09:17 and 21:17 China Standard Time and can be started manually. A normal same-season update makes about seven Raider.IO requests: one `static-data`, one shared `score-tiers`, and five regional `season-cutoffs` requests. A full offseason run makes only the single `static-data` request, while collecting-only seasons skip `score-tiers`.
+The `Update Regional Mythic Rank Data` workflow runs twice daily at 09:17 and 21:17 China Standard Time and can be started manually. A normal same-season update makes about seven Raider.IO requests: one `static-data`, one shared `score-tiers`, and five regional `season-cutoffs` requests.
 
-Only regions with publishable changes are built, included in the Artifact, and passed to the validated CurseForge publishing step. Regional packages may have different seasons, states, data versions, and ZIP versions. The separate read-only `Validate Pull Request` workflow always runs tests, Lua 5.1 validation, and a five-package build without contacting Raider.IO or CurseForge.
+The `Update QFX Talent Data` workflow runs twice daily. It collects global Mythic+ samples plus Heroic and Mythic raid samples, generates one `QFXTalentData` package, validates every Lua file with Lua 5.1, and commits only changed generated data.
+
+Only regional rank packages with publishable changes are built and passed to their validated CurseForge publishing step. The separate read-only `Validate Pull Request` workflow runs tests, Lua 5.1 validation, and regional package builds without contacting Raider.IO, Warcraft Logs, or CurseForge.
