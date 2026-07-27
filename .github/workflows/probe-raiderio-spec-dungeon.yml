@@ -10,6 +10,8 @@ on:
       - scripts/probe_raiderio_spec_dungeon_v3.py
       - scripts/probe_raiderio_spec_dungeon_v4.py
       - scripts/probe_wcl_raid_talents_v1.py
+      - scripts/build_mythic_talents_data.py
+      - config/mythic_talents_dungeons.json
       - .github/workflows/probe-raiderio-spec-dungeon.yml
   pull_request:
     paths:
@@ -17,6 +19,8 @@ on:
       - scripts/probe_raiderio_spec_dungeon_v3.py
       - scripts/probe_raiderio_spec_dungeon_v4.py
       - scripts/probe_wcl_raid_talents_v1.py
+      - scripts/build_mythic_talents_data.py
+      - config/mythic_talents_dungeons.json
       - .github/workflows/probe-raiderio-spec-dungeon.yml
   workflow_dispatch:
     inputs:
@@ -78,6 +82,20 @@ jobs:
         env:
           RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
         run: python scripts/probe_raiderio_spec_dungeon_v4.py
+
+      - name: Generate QFX Mythic Talents database addon
+        run: |
+          python scripts/build_mythic_talents_data.py \
+            --input artifacts/raiderio_mainstream_talents_v4.json \
+            --output artifacts/database/QFXMythicTalents_Data \
+            --zip "artifacts/database/QFXMythicTalents_Data-${{ github.run_id }}.zip"
+
+      - name: Validate generated database Lua
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lua5.1
+          find artifacts/database/QFXMythicTalents_Data -name '*.lua' -print0 \
+            | xargs -0 -n1 luac5.1 -p
 
       - name: Publish Raider.IO job summary
         if: always()

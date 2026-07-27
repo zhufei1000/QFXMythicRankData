@@ -47,6 +47,10 @@ jobs:
             luac5.1 -p "QFXMythicRankData_${region}/Core.lua"
             luac5.1 -p "QFXMythicRankData_${region}/Data.lua"
           done
+          if [ -d QFXMythicTalents_Data ]; then
+            find QFXMythicTalents_Data -name '*.lua' -print0 \
+              | xargs -0 -n1 luac5.1 -p
+          fi
 
       - name: Build all regional packages
         run: python scripts/build_packages.py

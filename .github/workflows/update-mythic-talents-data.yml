@@ -1,0 +1,104 @@
+name: Update QFX Mythic Talents Data
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-qfx-mythic-talents-data
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --requirement requirements.txt
+          sudo apt-get update
+          sudo apt-get install --yes lua5.1
+
+      - name: Require Raider.IO access key
+        shell: bash
+        env:
+          RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${RAIDERIO_ACCESS_KEY}" ]]; then
+            echo "::error::Repository secret RAIDERIO_ACCESS_KEY is missing."
+            exit 1
+          fi
+
+      - name: Collect ten Mythic+ talent samples
+        env:
+          RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
+        run: python scripts/probe_raiderio_spec_dungeon_v4.py
+
+      - name: Generate database addon and package
+        run: |
+          python scripts/build_mythic_talents_data.py \
+            --input artifacts/raiderio_mainstream_talents_v4.json \
+            --output QFXMythicTalents_Data \
+            --zip "artifacts/QFXMythicTalents_Data-${{ github.run_id }}.zip"
+
+      - name: Validate generated database
+        run: |
+          python -m pytest -q tests/test_mythic_talents_data.py
+          find QFXMythicTalents_Data -name '*.lua' -print0 \
+            | xargs -0 -n1 luac5.1 -p
+
+      - name: Publish job summary
+        shell: bash
+        run: |
+          cat artifacts/raiderio_mainstream_talents_v4.md >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo
+            echo "## Generated database addon"
+            sed -n '3,10p' QFXMythicTalents_Data/README.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit generated database
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^## Version: //p' QFXMythicTalents_Data/QFXMythicTalents_Data.toc)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add QFXMythicTalents_Data
+          if git diff --cached --quiet; then
+            echo "Generated database is unchanged."
+          else
+            git commit -m "Update Mythic+ talent database ${version} [skip ci]"
+            git push
+          fi
+
+      - name: Upload database package and source result
+        uses: actions/upload-artifact@v4
+        with:
+          name: qfx-mythic-talents-data-${{ github.run_id }}
+          path: |
+            artifacts/QFXMythicTalents_Data-${{ github.run_id }}.zip
+            artifacts/raiderio_mainstream_talents_v4.json
+            artifacts/raiderio_mainstream_talents_v4.md
+          if-no-files-found: error
+          retention-days: 30

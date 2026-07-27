@@ -1,0 +1,68 @@
+{
+  "dungeons": {
+    "algethar-academy": {
+      "id": 14032,
+      "names": {
+        "zhCN": "艾杰斯亚学院",
+        "zhTW": "艾傑斯亞學院"
+      },
+      "aliases": ["学院", "academy"]
+    },
+    "magisters-terrace": {
+      "id": 15829,
+      "names": {
+        "zhCN": "魔导师平台",
+        "zhTW": "博學者殿堂"
+      },
+      "aliases": ["魔导师", "博學者", "magister"]
+    },
+    "maisara-caverns": {
+      "id": 16395,
+      "names": {
+        "zhCN": "迈萨拉洞窟",
+        "zhTW": "邁薩拉洞窟"
+      },
+      "aliases": ["迈萨拉", "邁薩拉", "maisara"]
+    },
+    "nexuspoint-xenas": {
+      "id": 16573,
+      "names": {
+        "zhCN": "节点希纳斯",
+        "zhTW": "節點希納斯"
+      },
+      "aliases": ["希纳斯", "希納斯", "xenas", "nexuspoint", "nexus-point"]
+    },
+    "pit-of-saron": {
+      "id": 4813,
+      "names": {
+        "zhCN": "萨隆矿坑",
+        "zhTW": "薩倫之淵"
+      },
+      "aliases": ["萨隆", "薩倫", "pitofsaron"]
+    },
+    "seat-of-the-triumvirate": {
+      "id": 8910,
+      "names": {
+        "zhCN": "执政团之座",
+        "zhTW": "三傑議會之座"
+      },
+      "aliases": ["执政团", "執政團", "三傑議會", "triumvirate"]
+    },
+    "skyreach": {
+      "id": 6988,
+      "names": {
+        "zhCN": "通天峰",
+        "zhTW": "擎天峰"
+      },
+      "aliases": []
+    },
+    "windrunner-spire": {
+      "id": 15808,
+      "names": {
+        "zhCN": "风行者之塔",
+        "zhTW": "風行者之塔"
+      },
+      "aliases": ["风行者", "風行者", "windrunner"]
+    }
+  }
+}
