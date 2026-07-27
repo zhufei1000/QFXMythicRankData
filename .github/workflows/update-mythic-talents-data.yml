@@ -45,7 +45,7 @@ permissions:
 
 concurrency:
   group: update-qfx-talent-data-${{ github.event.pull_request.head.ref || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   PYTHONUNBUFFERED: "1"
