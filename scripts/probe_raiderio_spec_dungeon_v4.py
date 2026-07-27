@@ -15,7 +15,7 @@ from typing import Any
 import probe_raiderio_spec_dungeon_v2 as core
 
 TARGET = 10
-WORKERS = 16
+WORKERS = 160
 RATE = 900
 WAVE_PER_DUNGEON = 2
 MAX_PAGES = 5
