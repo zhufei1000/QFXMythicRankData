@@ -16,7 +16,7 @@ import probe_raiderio_spec_dungeon_v2 as core
 
 TARGET = 10
 WORKERS = 16
-RATE = 180
+RATE = 900
 WAVE_PER_DUNGEON = 2
 MAX_PAGES = 5
 OUT = pathlib.Path("artifacts")

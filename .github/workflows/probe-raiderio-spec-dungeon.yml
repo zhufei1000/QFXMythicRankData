@@ -31,7 +31,7 @@ on:
         type: string
         default: ""
       wcl_target:
-        description: "Valid WCL talent samples required per boss/spec"
+        description: "Valid WCL talent samples required per boss/spec; set 0 to skip WCL"
         required: true
         type: string
         default: "10"
@@ -110,6 +110,7 @@ jobs:
 
   wcl-raid:
     name: Warcraft Logs Raid V1
+    if: github.event_name != 'workflow_dispatch' || inputs.wcl_target != '0'
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
