@@ -104,6 +104,25 @@
           }
         }
       }
+    },
+    "sporefall": {
+      "id": 2427,
+      "names": {
+        "enUS": "Sporefall",
+        "zhCN": "孢陨幽境",
+        "zhTW": "孢殞幽境"
+      },
+      "aliases": ["Sporefall", "孢陨幽境", "孢殞幽境"],
+      "bosses": {
+        "3159": {
+          "slug": "rotmire",
+          "names": {
+            "enUS": "Rotmire",
+            "zhCN": "腐沼",
+            "zhTW": "腐沼"
+          }
+        }
+      }
     }
   }
 }
