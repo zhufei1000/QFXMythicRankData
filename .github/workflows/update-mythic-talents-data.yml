@@ -1,0 +1,240 @@
+name: Update QFX Talent Data
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+    - cron: "17 16 * * *"
+  workflow_dispatch:
+    inputs:
+      wcl_max_pages:
+        description: "Maximum WCL ranking pages scanned per boss/spec/difficulty"
+        required: true
+        type: string
+        default: "5"
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/collect_mythicplus_talents.py
+      - scripts/collect_raid_talents.py
+      - scripts/build_talent_data.py
+      - scripts/probe_raiderio_spec_dungeon_v2.py
+      - scripts/probe_raiderio_spec_dungeon_v4.py
+      - scripts/probe_wcl_raid_talents_v1.py
+      - scripts/wcl_talent_export.py
+      - scripts/templates/qfx_talent_data/**
+      - tests/test_talent_data.py
+      - config/mythic_talents_dungeons.json
+      - config/mythic_talents_raids.json
+      - .github/workflows/update-mythic-talents-data.yml
+permissions:
+  contents: write
+
+concurrency:
+  group: update-qfx-talent-data-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  update:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository branch head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies and Lua 5.1
+        run: |
+          python -m pip install --requirement requirements.txt
+          sudo apt-get update
+          sudo apt-get install --yes lua5.1
+
+      - name: Compile collectors and builder
+        run: |
+          python -m py_compile \
+            scripts/collect_mythicplus_talents.py \
+            scripts/collect_raid_talents.py \
+            scripts/build_talent_data.py \
+            scripts/probe_raiderio_spec_dungeon_v2.py \
+            scripts/probe_raiderio_spec_dungeon_v4.py \
+            scripts/probe_wcl_raid_talents_v1.py \
+            scripts/wcl_talent_export.py
+
+      - name: Collect ten global Mythic+ talent samples
+        env:
+          RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
+        run: python scripts/collect_mythicplus_talents.py
+
+      - name: Check Warcraft Logs credentials
+        id: wcl
+        shell: bash
+        env:
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
+        run: |
+          if [[ -n "${WCL_CLIENT_ID}" && -n "${WCL_CLIENT_SECRET}" ]]; then
+            echo "available=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+            echo "::warning::WCL credentials are missing; retaining Mythic+ data and omitting raid data for this run."
+          fi
+
+      - name: Collect original tier Heroic raid talents
+        if: steps.wcl.outputs.available == 'true'
+        env:
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
+          WCL_TARGET: "10"
+          WCL_MAX_PAGES: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_max_pages || '5' }}
+        run: |
+          python scripts/collect_raid_talents.py \
+            --zone 46 \
+            --difficulty 4 \
+            --output artifacts/wcl_tier_heroic.json \
+            --markdown artifacts/wcl_tier_heroic.md \
+            --checkpoint artifacts/wcl_tier_heroic_checkpoint.json
+
+      - name: Collect original tier Mythic raid talents
+        if: steps.wcl.outputs.available == 'true'
+        env:
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
+          WCL_TARGET: "10"
+          WCL_MAX_PAGES: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_max_pages || '5' }}
+        run: |
+          python scripts/collect_raid_talents.py \
+            --zone 46 \
+            --difficulty 5 \
+            --output artifacts/wcl_tier_mythic.json \
+            --markdown artifacts/wcl_tier_mythic.md \
+            --checkpoint artifacts/wcl_tier_mythic_checkpoint.json
+
+      - name: Collect Sporefall Heroic Rotmire talents
+        if: steps.wcl.outputs.available == 'true'
+        env:
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
+          WCL_TARGET: "10"
+          WCL_MAX_PAGES: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_max_pages || '5' }}
+        run: |
+          python scripts/collect_raid_talents.py \
+            --zone 50 \
+            --difficulty 4 \
+            --output artifacts/wcl_sporefall_heroic.json \
+            --markdown artifacts/wcl_sporefall_heroic.md \
+            --checkpoint artifacts/wcl_sporefall_heroic_checkpoint.json
+
+      - name: Collect Sporefall Mythic Rotmire talents
+        if: steps.wcl.outputs.available == 'true'
+        env:
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
+          WCL_TARGET: "10"
+          WCL_MAX_PAGES: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_max_pages || '5' }}
+        run: |
+          python scripts/collect_raid_talents.py \
+            --zone 50 \
+            --difficulty 5 \
+            --output artifacts/wcl_sporefall_mythic.json \
+            --markdown artifacts/wcl_sporefall_mythic.md \
+            --checkpoint artifacts/wcl_sporefall_mythic_checkpoint.json
+
+      - name: Generate unified QFXTalentData addon
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf QFXMythicTalents_Data
+          raid_args=()
+          for file in \
+            artifacts/wcl_tier_heroic.json \
+            artifacts/wcl_tier_mythic.json \
+            artifacts/wcl_sporefall_heroic.json \
+            artifacts/wcl_sporefall_mythic.json; do
+            if [[ -f "${file}" ]]; then
+              raid_args+=(--raid-input "${file}")
+            fi
+          done
+          python scripts/build_talent_data.py \
+            --input artifacts/raiderio_mainstream_talents_v4.json \
+            "${raid_args[@]}" \
+            --output QFXTalentData \
+            --zip "artifacts/QFXTalentData-${GITHUB_RUN_ID}.zip"
+
+      - name: Validate generated database
+        run: |
+          python -m pytest -q tests/test_talent_data.py
+          find QFXTalentData -name '*.lua' -print0 | xargs -0 -n1 luac5.1 -p
+          unzip -t "artifacts/QFXTalentData-${GITHUB_RUN_ID}.zip"
+          test -f QFXTalentData/SpecLoaders.lua
+          test ! -d QFXTalentData/Classes
+          ! grep -q '\["selection"\]' QFXTalentData/SpecLoaders.lua
+          test "$(unzip -Z1 "artifacts/QFXTalentData-${GITHUB_RUN_ID}.zip" | grep -c '^QFXTalentData/[^/]*$')" -eq 6
+          grep -q 'slug="sporefall"' QFXTalentData/Common.lua
+          grep -q 'id=3159' QFXTalentData/Common.lua
+
+      - name: Publish summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f artifacts/raiderio_mainstream_talents_v4.md ]]; then
+            cat artifacts/raiderio_mainstream_talents_v4.md >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          for file in artifacts/wcl_tier_heroic.md artifacts/wcl_tier_mythic.md artifacts/wcl_sporefall_heroic.md artifacts/wcl_sporefall_mythic.md; do
+            if [[ -f "${file}" ]]; then
+              printf '\n' >> "${GITHUB_STEP_SUMMARY}"
+              cat "${file}" >> "${GITHUB_STEP_SUMMARY}"
+            fi
+          done
+          if [[ -f QFXTalentData/README.md ]]; then
+            printf '\n## Generated unified database\n\n' >> "${GITHUB_STEP_SUMMARY}"
+            cat QFXTalentData/README.md >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Commit generated database
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^## Version: //p' QFXTalentData/QFXTalentData.toc)"
+          target_branch="${GITHUB_REF_NAME}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- QFXTalentData
+          if git diff --cached --quiet; then
+            echo "QFXTalentData is unchanged."
+          else
+            git commit -m "Update QFXTalentData ${version} with Sporefall [skip ci]"
+            git push origin "HEAD:${target_branch}"
+          fi
+
+      - name: Upload database and source results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qfx-talent-data-${{ github.run_id }}
+          path: |
+            artifacts/QFXTalentData-${{ github.run_id }}.zip
+            artifacts/raiderio_mainstream_talents_v4.json
+            artifacts/raiderio_mainstream_talents_v4.md
+            artifacts/wcl_tier_heroic.json
+            artifacts/wcl_tier_heroic.md
+            artifacts/wcl_tier_mythic.json
+            artifacts/wcl_tier_mythic.md
+            artifacts/wcl_sporefall_heroic.json
+            artifacts/wcl_sporefall_heroic.md
+            artifacts/wcl_sporefall_mythic.json
+            artifacts/wcl_sporefall_mythic.md
+          if-no-files-found: warn
+          retention-days: 30
