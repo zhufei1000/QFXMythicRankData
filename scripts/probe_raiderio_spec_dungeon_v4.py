@@ -17,7 +17,7 @@ import probe_raiderio_spec_dungeon_v2 as core
 TARGET = 10
 WORKERS = 160
 RATE = 900
-WAVE_PER_DUNGEON = 2
+WAVE_PER_DUNGEON = 10
 MAX_PAGES = 5
 OUT = pathlib.Path("artifacts")
 JSON_OUT = OUT / "raiderio_mainstream_talents_v4.json"
@@ -261,6 +261,7 @@ def save_checkpoint(
                 "target_per_dungeon_spec": TARGET,
                 "http_requests": core.requests_total,
                 "http_retries": core.retries_total,
+                "retry_reasons": dict(core.retry_reasons),
                 "request_counts": dict(core.request_kinds),
                 "cached_runs": len(_cache),
                 "sample_counts": {
@@ -287,6 +288,7 @@ def render(result: dict[str, Any]) -> str:
         f"- 目标：每个专精 × 每个副本固定 {TARGET} 份有效天赋，不做追加采样",
         f"- 并发：{WORKERS}；限速：{RATE}/分钟；耗时：{result['elapsed_seconds']:.1f} 秒",
         f"- HTTP：{result['http_requests']}；重试：{result['http_retries']}",
+        f"- 重试原因：{json.dumps(result['retry_reasons'], ensure_ascii=False, sort_keys=True)}",
         f"- 达标组合：{result['combinations_at_target']}/{result['total_combinations']}",
         "",
         "| 副本 | 达到10份的专精 | 最低样本 | 有分歧节点的组合 |",
@@ -504,6 +506,7 @@ def main() -> int:
         "requests_per_minute": RATE,
         "http_requests": core.requests_total,
         "http_retries": core.retries_total,
+        "retry_reasons": dict(core.retry_reasons),
         "request_counts": dict(core.request_kinds),
         "cached_runs": len(_cache),
         "elapsed_seconds": round(time.monotonic() - started, 3),

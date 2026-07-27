@@ -54,6 +54,7 @@ _thread = threading.local()
 requests_total = 0
 retries_total = 0
 request_kinds: dict[str, int] = defaultdict(int)
+retry_reasons: dict[str, int] = defaultdict(int)
 run_cache: dict[int, "RunSummary | None"] = {}
 inflight: dict[int, threading.Event] = {}
 
@@ -118,6 +119,7 @@ def request_json(url: str, params: dict[str, Any], *, kind: str, v1: bool, allow
             if response.status_code == 429 or response.status_code >= 500:
                 with _stats_lock:
                     retries_total += 1
+                    retry_reasons[f"http_{response.status_code}"] += 1
                 retry_after = response.headers.get("Retry-After", "")
                 try:
                     delay = max(float(retry_after), 1.0)
@@ -133,6 +135,7 @@ def request_json(url: str, params: dict[str, Any], *, kind: str, v1: bool, allow
                 break
             with _stats_lock:
                 retries_total += 1
+                retry_reasons[type(exc).__name__] += 1
             time.sleep(min(2**attempt, 30))
     status = response.status_code if response is not None else "network"
     raise RuntimeError(f"{kind} failed ({status}): {last_error}")
