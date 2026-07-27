@@ -1,36 +1,62 @@
-name: Probe RaiderIO Spec Dungeon Coverage
+name: Probe RaiderIO M+ and WCL Raid Talent Coverage
 
 on:
   push:
     branches:
       - probe/raiderio-spec-dungeon-20260726
+      - probe/wcl-raid-talents-20260727
     paths:
       - scripts/probe_raiderio_spec_dungeon_v2.py
       - scripts/probe_raiderio_spec_dungeon_v3.py
       - scripts/probe_raiderio_spec_dungeon_v4.py
+      - scripts/probe_wcl_raid_talents_v1.py
       - .github/workflows/probe-raiderio-spec-dungeon.yml
   pull_request:
     paths:
       - scripts/probe_raiderio_spec_dungeon_v2.py
       - scripts/probe_raiderio_spec_dungeon_v3.py
       - scripts/probe_raiderio_spec_dungeon_v4.py
+      - scripts/probe_wcl_raid_talents_v1.py
       - .github/workflows/probe-raiderio-spec-dungeon.yml
   workflow_dispatch:
+    inputs:
+      wcl_zone_id:
+        description: "Optional Warcraft Logs raid zone ID; blank auto-detects the latest unfrozen Mythic raid"
+        required: false
+        type: string
+        default: ""
+      wcl_difficulty:
+        description: "Optional Warcraft Logs difficulty ID; blank selects Mythic by name"
+        required: false
+        type: string
+        default: ""
+      wcl_target:
+        description: "Valid WCL talent samples required per boss/spec"
+        required: true
+        type: string
+        default: "10"
+      wcl_max_pages:
+        description: "Maximum WCL ranking pages per boss/spec"
+        required: true
+        type: string
+        default: "3"
 
 permissions:
   contents: read
 
 concurrency:
-  group: raiderio-spec-dungeon-probe-${{ github.ref }}
+  group: multi-platform-talent-probes-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
-  probe:
+  raiderio-mythic-plus:
+    name: Raider.IO Mythic+ V4
     runs-on: ubuntu-latest
     timeout-minutes: 45
+
     steps:
       - name: Checkout probe branch
         uses: actions/checkout@v4
@@ -53,7 +79,7 @@ jobs:
           RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
         run: python scripts/probe_raiderio_spec_dungeon_v4.py
 
-      - name: Publish job summary
+      - name: Publish Raider.IO job summary
         if: always()
         run: |
           if [ -f artifacts/raiderio_mainstream_talents_v4.md ]; then
@@ -73,11 +99,114 @@ jobs:
           PY
           fi
 
-      - name: Upload result and checkpoint
+      - name: Upload Raider.IO result and checkpoint
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: raiderio-mainstream-talents-v4-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 7
+
+  wcl-raid:
+    name: Warcraft Logs Raid V1
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout probe branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependency
+        run: python -m pip install requests
+
+      - name: Compile WCL raid probe
+        run: |
+          python -m py_compile scripts/probe_raiderio_spec_dungeon_v2.py
+          python -m py_compile scripts/probe_wcl_raid_talents_v1.py
+
+      - name: Check WCL credentials
+        id: wcl_credentials
+        shell: bash
+        env:
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${WCL_CLIENT_ID}" && -n "${WCL_CLIENT_SECRET}" ]]; then
+            echo "available=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+            echo "::warning::WCL_CLIENT_ID or WCL_CLIENT_SECRET is missing; WCL probe will be skipped."
+          fi
+
+      - name: Run fixed ten-sample WCL raid talent probe
+        if: steps.wcl_credentials.outputs.available == 'true'
+        env:
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
+          WCL_ZONE_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_zone_id || '' }}
+          WCL_DIFFICULTY: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_difficulty || '' }}
+          WCL_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_target || '10' }}
+          WCL_MAX_PAGES: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_max_pages || '3' }}
+        run: python scripts/probe_wcl_raid_talents_v1.py
+
+      - name: Write skipped WCL result
+        if: steps.wcl_credentials.outputs.available != 'true'
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          cat > artifacts/wcl_raid_talents_v1.md <<'EOF'
+          # Warcraft Logs raid talent probe
+
+          Skipped because repository secrets `WCL_CLIENT_ID` and/or `WCL_CLIENT_SECRET` are not configured.
+          EOF
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          Path("artifacts/wcl_raid_talents_v1.json").write_text(
+              json.dumps(
+                  {
+                      "status": "skipped",
+                      "reason": "missing WCL_CLIENT_ID or WCL_CLIENT_SECRET",
+                  },
+                  indent=2,
+              ),
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Publish WCL job summary
+        if: always()
+        run: |
+          if [ -f artifacts/wcl_raid_talents_v1.md ]; then
+            cat artifacts/wcl_raid_talents_v1.md >> "$GITHUB_STEP_SUMMARY"
+          elif [ -f artifacts/wcl_raid_talents_checkpoint_v1.json ]; then
+            echo "# WCL raid talent probe checkpoint" >> "$GITHUB_STEP_SUMMARY"
+            python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p = Path("artifacts/wcl_raid_talents_checkpoint_v1.json")
+          d = json.loads(p.read_text(encoding="utf-8"))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write(f"\n- Raid: {d['zone_name']} ({d['zone_id']})\n")
+              f.write(f"- Difficulty: {d['difficulty_name']}\n")
+              f.write(f"- Completed specs: {len(d['completed_specs'])}/40\n")
+              f.write(f"- Current spec: {d['current_spec'] or 'none'}\n")
+              f.write(f"- GraphQL requests: {d['http_requests']}\n")
+          PY
+          fi
+
+      - name: Upload WCL result and checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wcl-raid-talents-v1-${{ github.run_id }}
           path: artifacts/
           if-no-files-found: warn
           retention-days: 7
