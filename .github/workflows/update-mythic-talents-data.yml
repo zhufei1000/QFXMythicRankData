@@ -1,15 +1,36 @@
-name: Update QFX Mythic Talents Data
+name: Update QFX Talent Data
 
 on:
   schedule:
     - cron: "17 4 * * *"
+    - cron: "17 16 * * *"
   workflow_dispatch:
+    inputs:
+      wcl_max_pages:
+        description: "Maximum WCL ranking pages scanned per boss/spec/difficulty"
+        required: true
+        type: string
+        default: "5"
+  push:
+    branches:
+      - agent/unify-qfx-talent-data
+    paths:
+      - scripts/collect_mythicplus_talents.py
+      - scripts/collect_raid_talents.py
+      - scripts/build_talent_data.py
+      - scripts/probe_raiderio_spec_dungeon_v2.py
+      - scripts/probe_raiderio_spec_dungeon_v4.py
+      - scripts/probe_wcl_raid_talents_v1.py
+      - scripts/wcl_talent_export.py
+      - config/mythic_talents_dungeons.json
+      - config/mythic_talents_raids.json
+      - .github/workflows/update-mythic-talents-data.yml
 
 permissions:
   contents: write
 
 concurrency:
-  group: update-qfx-mythic-talents-data
+  group: update-qfx-talent-data-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -18,7 +39,7 @@ env:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
@@ -32,94 +53,137 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install dependencies
+      - name: Install dependencies and Lua 5.1
         run: |
           python -m pip install --requirement requirements.txt
           sudo apt-get update
           sudo apt-get install --yes lua5.1
 
-      - name: Require data-source credentials
-        shell: bash
+      - name: Compile collectors and builder
+        run: |
+          python -m py_compile \
+            scripts/collect_mythicplus_talents.py \
+            scripts/collect_raid_talents.py \
+            scripts/build_talent_data.py \
+            scripts/probe_raiderio_spec_dungeon_v2.py \
+            scripts/probe_raiderio_spec_dungeon_v4.py \
+            scripts/probe_wcl_raid_talents_v1.py \
+            scripts/wcl_talent_export.py
+
+      - name: Collect ten global Mythic+ talent samples
         env:
           RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
+        run: python scripts/collect_mythicplus_talents.py
+
+      - name: Check Warcraft Logs credentials
+        id: wcl
+        shell: bash
+        env:
           WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
           WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
         run: |
-          set -euo pipefail
-          if [[ -z "${RAIDERIO_ACCESS_KEY}" ]]; then
-            echo "::error::Repository secret RAIDERIO_ACCESS_KEY is missing."
-            exit 1
-          fi
-          if [[ -z "${WCL_CLIENT_ID}" || -z "${WCL_CLIENT_SECRET}" ]]; then
-            echo "::error::Repository secrets WCL_CLIENT_ID and WCL_CLIENT_SECRET are required."
-            exit 1
+          if [[ -n "${WCL_CLIENT_ID}" && -n "${WCL_CLIENT_SECRET}" ]]; then
+            echo "available=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+            echo "::warning::WCL credentials are missing; retaining Mythic+ data and omitting raid data for this run."
           fi
 
-      - name: Collect ten Mythic+ talent samples
-        env:
-          RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
-        run: python scripts/probe_raiderio_spec_dungeon_v4.py
-
-      - name: Collect top-ten raid boss talent samples
+      - name: Collect Heroic raid talent samples
+        if: steps.wcl.outputs.available == 'true'
         env:
           WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
           WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
           WCL_TARGET: "10"
-          WCL_MAX_PAGES: "3"
-        run: python scripts/probe_wcl_raid_talents_v1.py
-
-      - name: Generate database addon and package
+          WCL_MAX_PAGES: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_max_pages || '5' }}
         run: |
-          python scripts/build_mythic_talents_data.py \
+          python scripts/collect_raid_talents.py \
+            --difficulty 4 \
+            --output artifacts/wcl_raid_talents_heroic.json \
+            --markdown artifacts/wcl_raid_talents_heroic.md \
+            --checkpoint artifacts/wcl_raid_talents_heroic_checkpoint.json
+
+      - name: Collect Mythic raid talent samples
+        if: steps.wcl.outputs.available == 'true'
+        env:
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
+          WCL_TARGET: "10"
+          WCL_MAX_PAGES: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_max_pages || '5' }}
+        run: |
+          python scripts/collect_raid_talents.py \
+            --difficulty 5 \
+            --output artifacts/wcl_raid_talents_mythic.json \
+            --markdown artifacts/wcl_raid_talents_mythic.md \
+            --checkpoint artifacts/wcl_raid_talents_mythic_checkpoint.json
+
+      - name: Generate unified QFXTalentData addon
+        shell: bash
+        run: |
+          set -euo pipefail
+          raid_args=()
+          for file in artifacts/wcl_raid_talents_heroic.json artifacts/wcl_raid_talents_mythic.json; do
+            if [[ -f "${file}" ]]; then
+              raid_args+=(--raid-input "${file}")
+            fi
+          done
+          python scripts/build_talent_data.py \
             --input artifacts/raiderio_mainstream_talents_v4.json \
-            --raid-input artifacts/wcl_raid_talents_v1.json \
-            --output QFXMythicTalents_Data \
-            --zip "artifacts/QFXMythicTalents_Data-${{ github.run_id }}.zip"
+            "${raid_args[@]}" \
+            --output QFXTalentData \
+            --zip "artifacts/QFXTalentData-${GITHUB_RUN_ID}.zip"
 
       - name: Validate generated database
         run: |
-          python -m pytest -q tests/test_mythic_talents_data.py
-          find QFXMythicTalents_Data -name '*.lua' -print0 \
-            | xargs -0 -n1 luac5.1 -p
+          python -m pytest -q tests/test_talent_data.py
+          find QFXTalentData -name '*.lua' -print0 | xargs -0 -n1 luac5.1 -p
+          unzip -t "artifacts/QFXTalentData-${GITHUB_RUN_ID}.zip"
 
-      - name: Publish job summary
+      - name: Publish summary
+        if: always()
         shell: bash
         run: |
-          cat artifacts/raiderio_mainstream_talents_v4.md >> "$GITHUB_STEP_SUMMARY"
-          {
-            echo
-            cat artifacts/wcl_raid_talents_v1.md
-          } >> "$GITHUB_STEP_SUMMARY"
-          {
-            echo
-            echo "## Generated database addon"
-            sed -n '3,10p' QFXMythicTalents_Data/README.md
-          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ -f artifacts/raiderio_mainstream_talents_v4.md ]]; then
+            cat artifacts/raiderio_mainstream_talents_v4.md >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          for file in artifacts/wcl_raid_talents_heroic.md artifacts/wcl_raid_talents_mythic.md; do
+            if [[ -f "${file}" ]]; then
+              printf '\n' >> "${GITHUB_STEP_SUMMARY}"
+              cat "${file}" >> "${GITHUB_STEP_SUMMARY}"
+            fi
+          done
+          if [[ -f QFXTalentData/README.md ]]; then
+            printf '\n## Generated unified database\n\n' >> "${GITHUB_STEP_SUMMARY}"
+            cat QFXTalentData/README.md >> "${GITHUB_STEP_SUMMARY}"
+          fi
 
       - name: Commit generated database
         shell: bash
         run: |
           set -euo pipefail
-          version="$(sed -n 's/^## Version: //p' QFXMythicTalents_Data/QFXMythicTalents_Data.toc)"
+          version="$(sed -n 's/^## Version: //p' QFXTalentData/QFXTalentData.toc)"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add QFXMythicTalents_Data
+          git add -- QFXTalentData
           if git diff --cached --quiet; then
-            echo "Generated database is unchanged."
+            echo "QFXTalentData is unchanged."
           else
-            git commit -m "Update Mythic+ and raid talent database ${version} [skip ci]"
-            git push
+            git commit -m "Update QFXTalentData ${version} [skip ci]"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
 
-      - name: Upload database package and source result
+      - name: Upload database and source results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: qfx-mythic-talents-data-${{ github.run_id }}
+          name: qfx-talent-data-${{ github.run_id }}
           path: |
-            artifacts/QFXMythicTalents_Data-${{ github.run_id }}.zip
+            artifacts/QFXTalentData-${{ github.run_id }}.zip
             artifacts/raiderio_mainstream_talents_v4.json
             artifacts/raiderio_mainstream_talents_v4.md
-            artifacts/wcl_raid_talents_v1.json
-            artifacts/wcl_raid_talents_v1.md
-          if-no-files-found: error
+            artifacts/wcl_raid_talents_heroic.json
+            artifacts/wcl_raid_talents_heroic.md
+            artifacts/wcl_raid_talents_mythic.json
+            artifacts/wcl_raid_talents_mythic.md
+          if-no-files-found: warn
           retention-days: 30
