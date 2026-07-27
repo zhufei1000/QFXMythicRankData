@@ -53,7 +53,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: multi-platform-talent-probes-${{ github.ref }}
+  # A branch with an open PR receives both push and pull_request events.
+  # Use the head branch for both so only one copy spends API quota.
+  group: multi-platform-talent-probes-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 env:

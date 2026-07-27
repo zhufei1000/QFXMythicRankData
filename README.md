@@ -115,7 +115,9 @@ The QFX Mythic Talents database uses Raider.IO run details for Mythic+ and
 Warcraft Logs encounter rankings for raid bosses. Set `WCL_CLIENT_ID` and
 `WCL_CLIENT_SECRET` for the raid collector. WCL combatant talent entries are
 converted to Blizzard import strings with the current Raidbots talent tree
-metadata; the generated addon contains import strings only.
+metadata. Ranking rows captured against an outdated tree are skipped instead of
+publishing incomplete strings; the collector continues in ranking order until
+ten valid samples are found. The generated addon contains import strings only.
 
 `shared/Core.lua` is the only maintained API core. Run `python scripts/sync_core.py` after changing it, or use `--check` to verify that all five addon copies are identical.
 

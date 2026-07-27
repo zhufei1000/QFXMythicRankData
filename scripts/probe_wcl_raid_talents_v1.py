@@ -574,6 +574,7 @@ def render(result: dict[str, Any]) -> str:
         f"- 耗时：{result['elapsed_seconds']:.1f} 秒；GraphQL 请求：{result['http_requests']}；重试：{result['http_retries']}",
         f"- 达标组合：{result['combinations_at_target']}/{result['total_combinations']}",
         f"- 含可直接导入字符串的组合：{result['combinations_with_import_string']}/{result['total_combinations']}",
+        f"- 因天赋树版本不匹配而跳过的排行榜记录：{result['conversion_rejections']}",
         "",
         "| 首领 | 达到目标的专精 | 最低样本 | 有导入字符串的专精 |",
         "|---|---:|---:|---:|",
@@ -621,6 +622,8 @@ def main() -> int:
         for encounter_id in encounter_ids
     }
     pages_by_combo: dict[tuple[int, int], int] = defaultdict(int)
+    conversion_rejections = 0
+    conversion_errors: Counter[str] = Counter()
     shape_samples: list[dict[str, Any]] = []
     completed_specs: list[str] = []
 
@@ -667,9 +670,17 @@ def main() -> int:
                                 loadout_text=talent_exporter.encode_payload(spec_id, sample.talent_payload),
                             )
                         except TalentExportError as exc:
-                            raise RuntimeError(
-                                f"cannot serialize {display} talents for {encounter.get('name')}: {exc}"
-                            ) from exc
+                            # Rankings can contain a combatant captured just before
+                            # a live talent hotfix. Never publish an incomplete
+                            # import string: skip that row and keep scanning in
+                            # ranking order until ten current-tree samples exist.
+                            conversion_rejections += 1
+                            conversion_errors[str(exc)] += 1
+                            print(
+                                f"skip rank={sample.rank} {display} / {encounter.get('name')}: {exc}",
+                                flush=True,
+                            )
+                            continue
                     if sample and sample.identity not in samples[encounter_id][spec_id]:
                         samples[encounter_id][spec_id][sample.identity] = sample
                         if len(samples[encounter_id][spec_id]) >= TARGET:
@@ -765,7 +776,7 @@ def main() -> int:
             (value for value in zone.get("partitions") or [] if isinstance(value, dict) and value.get("default")),
             None,
         ),
-        "strategy": "top 10 valid ranked characters from public encounter rankings with includeCombatantInfo; representative real sample nearest majority talent features",
+        "strategy": "top 10 current-tree-valid ranked characters from public encounter rankings with includeCombatantInfo; representative real sample nearest majority talent features",
         "target_per_encounter_spec": TARGET,
         "max_pages_per_combo": MAX_PAGES,
         "http_requests": client.requests,
@@ -781,6 +792,11 @@ def main() -> int:
         "coverage_rate": round(combinations_at_target / total, 4) if total else 0.0,
         "combinations_with_import_string": combinations_with_import,
         "import_string_coverage_rate": round(combinations_with_import / total, 4) if total else 0.0,
+        "conversion_rejections": conversion_rejections,
+        "conversion_errors": [
+            {"error": error, "count": count}
+            for error, count in conversion_errors.most_common(20)
+        ],
         "response_shape_samples": shape_samples,
         "encounters": encounter_results,
         "recommendations": recommendations,
