@@ -54,7 +54,7 @@ jobs:
   update:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
       - name: Checkout repository branch head
@@ -105,7 +105,7 @@ jobs:
             echo "::warning::WCL credentials are missing; retaining Mythic+ data and omitting raid data for this run."
           fi
 
-      - name: Collect Heroic raid talent samples
+      - name: Collect original tier Heroic raid talents
         if: steps.wcl.outputs.available == 'true'
         env:
           WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
@@ -114,12 +114,13 @@ jobs:
           WCL_MAX_PAGES: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_max_pages || '5' }}
         run: |
           python scripts/collect_raid_talents.py \
+            --zone 46 \
             --difficulty 4 \
-            --output artifacts/wcl_raid_talents_heroic.json \
-            --markdown artifacts/wcl_raid_talents_heroic.md \
-            --checkpoint artifacts/wcl_raid_talents_heroic_checkpoint.json
+            --output artifacts/wcl_tier_heroic.json \
+            --markdown artifacts/wcl_tier_heroic.md \
+            --checkpoint artifacts/wcl_tier_heroic_checkpoint.json
 
-      - name: Collect Mythic raid talent samples
+      - name: Collect original tier Mythic raid talents
         if: steps.wcl.outputs.available == 'true'
         env:
           WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
@@ -128,10 +129,41 @@ jobs:
           WCL_MAX_PAGES: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_max_pages || '5' }}
         run: |
           python scripts/collect_raid_talents.py \
+            --zone 46 \
             --difficulty 5 \
-            --output artifacts/wcl_raid_talents_mythic.json \
-            --markdown artifacts/wcl_raid_talents_mythic.md \
-            --checkpoint artifacts/wcl_raid_talents_mythic_checkpoint.json
+            --output artifacts/wcl_tier_mythic.json \
+            --markdown artifacts/wcl_tier_mythic.md \
+            --checkpoint artifacts/wcl_tier_mythic_checkpoint.json
+
+      - name: Collect Sporefall Heroic Rotmire talents
+        if: steps.wcl.outputs.available == 'true'
+        env:
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
+          WCL_TARGET: "10"
+          WCL_MAX_PAGES: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_max_pages || '5' }}
+        run: |
+          python scripts/collect_raid_talents.py \
+            --zone 50 \
+            --difficulty 4 \
+            --output artifacts/wcl_sporefall_heroic.json \
+            --markdown artifacts/wcl_sporefall_heroic.md \
+            --checkpoint artifacts/wcl_sporefall_heroic_checkpoint.json
+
+      - name: Collect Sporefall Mythic Rotmire talents
+        if: steps.wcl.outputs.available == 'true'
+        env:
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
+          WCL_TARGET: "10"
+          WCL_MAX_PAGES: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_max_pages || '5' }}
+        run: |
+          python scripts/collect_raid_talents.py \
+            --zone 50 \
+            --difficulty 5 \
+            --output artifacts/wcl_sporefall_mythic.json \
+            --markdown artifacts/wcl_sporefall_mythic.md \
+            --checkpoint artifacts/wcl_sporefall_mythic_checkpoint.json
 
       - name: Generate unified QFXTalentData addon
         shell: bash
@@ -139,7 +171,11 @@ jobs:
           set -euo pipefail
           rm -rf QFXMythicTalents_Data
           raid_args=()
-          for file in artifacts/wcl_raid_talents_heroic.json artifacts/wcl_raid_talents_mythic.json; do
+          for file in \
+            artifacts/wcl_tier_heroic.json \
+            artifacts/wcl_tier_mythic.json \
+            artifacts/wcl_sporefall_heroic.json \
+            artifacts/wcl_sporefall_mythic.json; do
             if [[ -f "${file}" ]]; then
               raid_args+=(--raid-input "${file}")
             fi
@@ -155,6 +191,8 @@ jobs:
           python -m pytest -q tests/test_talent_data.py
           find QFXTalentData -name '*.lua' -print0 | xargs -0 -n1 luac5.1 -p
           unzip -t "artifacts/QFXTalentData-${GITHUB_RUN_ID}.zip"
+          grep -q 'slug="sporefall"' QFXTalentData/Common.lua
+          grep -q 'id=3159' QFXTalentData/Common.lua
 
       - name: Publish summary
         if: always()
@@ -163,7 +201,7 @@ jobs:
           if [[ -f artifacts/raiderio_mainstream_talents_v4.md ]]; then
             cat artifacts/raiderio_mainstream_talents_v4.md >> "${GITHUB_STEP_SUMMARY}"
           fi
-          for file in artifacts/wcl_raid_talents_heroic.md artifacts/wcl_raid_talents_mythic.md; do
+          for file in artifacts/wcl_tier_heroic.md artifacts/wcl_tier_mythic.md artifacts/wcl_sporefall_heroic.md artifacts/wcl_sporefall_mythic.md; do
             if [[ -f "${file}" ]]; then
               printf '\n' >> "${GITHUB_STEP_SUMMARY}"
               cat "${file}" >> "${GITHUB_STEP_SUMMARY}"
@@ -186,7 +224,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "QFXTalentData is unchanged."
           else
-            git commit -m "Update QFXTalentData ${version} [skip ci]"
+            git commit -m "Update QFXTalentData ${version} with Sporefall [skip ci]"
             git push origin "HEAD:${target_branch}"
           fi
 
@@ -199,9 +237,13 @@ jobs:
             artifacts/QFXTalentData-${{ github.run_id }}.zip
             artifacts/raiderio_mainstream_talents_v4.json
             artifacts/raiderio_mainstream_talents_v4.md
-            artifacts/wcl_raid_talents_heroic.json
-            artifacts/wcl_raid_talents_heroic.md
-            artifacts/wcl_raid_talents_mythic.json
-            artifacts/wcl_raid_talents_mythic.md
+            artifacts/wcl_tier_heroic.json
+            artifacts/wcl_tier_heroic.md
+            artifacts/wcl_tier_mythic.json
+            artifacts/wcl_tier_mythic.md
+            artifacts/wcl_sporefall_heroic.json
+            artifacts/wcl_sporefall_heroic.md
+            artifacts/wcl_sporefall_mythic.json
+            artifacts/wcl_sporefall_mythic.md
           if-no-files-found: warn
           retention-days: 30
