@@ -22,8 +22,10 @@ on:
       - scripts/probe_raiderio_spec_dungeon_v4.py
       - scripts/probe_wcl_raid_talents_v1.py
       - scripts/wcl_talent_export.py
+      - scripts/publish_talent_curseforge.py
       - scripts/templates/qfx_talent_data/**
       - tests/test_talent_data.py
+      - tests/test_talent_curseforge_publish.py
       - config/mythic_talents_dungeons.json
       - config/mythic_talents_raids.json
       - .github/workflows/update-mythic-talents-data.yml
@@ -31,15 +33,15 @@ permissions:
   contents: write
 
 concurrency:
-  group: update-qfx-talent-data-${{ github.ref }}
-  cancel-in-progress: true
+  group: curseforge-talent-publish
+  cancel-in-progress: false
 
 env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
   update:
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
@@ -71,7 +73,8 @@ jobs:
             scripts/probe_raiderio_spec_dungeon_v2.py \
             scripts/probe_raiderio_spec_dungeon_v4.py \
             scripts/probe_wcl_raid_talents_v1.py \
-            scripts/wcl_talent_export.py
+            scripts/wcl_talent_export.py \
+            scripts/publish_talent_curseforge.py
 
       - name: Collect ten global Mythic+ talent samples
         env:
@@ -153,6 +156,7 @@ jobs:
             --checkpoint artifacts/wcl_sporefall_mythic_checkpoint.json
 
       - name: Generate unified QFXTalentData addon
+        id: package
         shell: bash
         run: |
           set -euo pipefail
@@ -171,17 +175,26 @@ jobs:
             --input artifacts/raiderio_mainstream_talents_v4.json \
             "${raid_args[@]}" \
             --output QFXTalentData \
-            --zip "artifacts/QFXTalentData-${GITHUB_RUN_ID}.zip"
+            --zip "artifacts/QFXTalentData.zip"
+          version="$(sed -n 's/^## Version: //p' QFXTalentData/QFXTalentData.toc)"
+          if [[ ! "${version}" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{4}\.[0-9]{2}$ ]]; then
+            echo "Generated QFXTalentData version is invalid." >&2
+            exit 1
+          fi
+          package="artifacts/QFXTalentData-${version}.zip"
+          mv artifacts/QFXTalentData.zip "${package}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "path=${package}" >> "${GITHUB_OUTPUT}"
 
       - name: Validate generated database
         run: |
           python -m pytest -q tests/test_talent_data.py
           find QFXTalentData -name '*.lua' -print0 | xargs -0 -n1 luac5.1 -p
-          unzip -t "artifacts/QFXTalentData-${GITHUB_RUN_ID}.zip"
+          unzip -t "${{ steps.package.outputs.path }}"
           test -f QFXTalentData/SpecLoaders.lua
           test ! -d QFXTalentData/Classes
           ! grep -q '\["selection"\]' QFXTalentData/SpecLoaders.lua
-          test "$(unzip -Z1 "artifacts/QFXTalentData-${GITHUB_RUN_ID}.zip" | grep -c '^QFXTalentData/[^/]*$')" -eq 6
+          test "$(unzip -Z1 "${{ steps.package.outputs.path }}" | grep -c '^QFXTalentData/[^/]*$')" -eq 6
           grep -q 'slug="sporefall"' QFXTalentData/Common.lua
           grep -q 'id=3159' QFXTalentData/Common.lua
 
@@ -203,21 +216,86 @@ jobs:
             cat QFXTalentData/README.md >> "${GITHUB_STEP_SUMMARY}"
           fi
 
-      - name: Commit generated database
+      - name: Detect generated database changes
+        id: changes
         shell: bash
         run: |
           set -euo pipefail
-          version="$(sed -n 's/^## Version: //p' QFXTalentData/QFXTalentData.toc)"
-          target_branch="${GITHUB_REF_NAME}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A -- QFXTalentData
           if git diff --cached --quiet; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
             echo "QFXTalentData is unchanged."
           else
-            git commit -m "Update QFXTalentData ${version} with Sporefall [skip ci]"
-            git push origin "HEAD:${target_branch}"
+            echo "changed=true" >> "${GITHUB_OUTPUT}"
           fi
+
+      - name: Validate QFXTalentData package for CurseForge
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/publish_talent_curseforge.py \
+            --artifact-file "${{ steps.package.outputs.path }}" \
+            --mode validate \
+            --changelog-file talent-publish-report/changelog.md \
+            --report-file talent-publish-report/prepublish-validation.json \
+            --source-run-id "${GITHUB_RUN_ID}" \
+            --source-artifact-id 0 \
+            --source-commit pending
+
+      - name: Create the QFXTalentData commit locally
+        if: steps.changes.outputs.changed == 'true'
+        id: commit
+        shell: bash
+        env:
+          VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update QFXTalentData ${VERSION} with Sporefall [skip ci]"
+          echo "sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload QFXTalentData package Artifact
+        if: steps.changes.outputs.changed == 'true'
+        id: packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: QFXTalentData-package-${{ github.run_id }}
+          path: ${{ steps.package.outputs.path }}
+          retention-days: 5
+          if-no-files-found: error
+
+      - name: Upload QFXTalentData to CurseForge
+        if: steps.changes.outputs.changed == 'true'
+        id: curseforge
+        shell: bash
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          python scripts/publish_talent_curseforge.py \
+            --artifact-file "${{ steps.package.outputs.path }}" \
+            --mode upload \
+            --changelog-file talent-publish-report/changelog.md \
+            --report-file talent-publish-report/report.json \
+            --source-run-id "${GITHUB_RUN_ID}" \
+            --source-artifact-id "${{ steps.packages.outputs.artifact-id }}" \
+            --source-commit "${{ steps.commit.outputs.sha }}"
+
+      - name: Upload safe QFXTalentData publishing report
+        if: always() && steps.changes.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qfx-talent-curseforge-report-${{ github.run_id }}
+          path: talent-publish-report/report.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Push published QFXTalentData to main
+        if: steps.changes.outputs.changed == 'true' && steps.curseforge.outcome == 'success'
+        shell: bash
+        run: git push origin HEAD:main
 
       - name: Upload database and source results
         if: always()
@@ -225,7 +303,7 @@ jobs:
         with:
           name: qfx-talent-data-${{ github.run_id }}
           path: |
-            artifacts/QFXTalentData-${{ github.run_id }}.zip
+            artifacts/QFXTalentData-*.zip
             artifacts/raiderio_mainstream_talents_v4.json
             artifacts/raiderio_mainstream_talents_v4.md
             artifacts/wcl_tier_heroic.json

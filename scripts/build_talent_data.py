@@ -244,6 +244,7 @@ def toc(data):
 ## Notes-zhTW: 全球傳奇鑰石與英雄/傳奇團本天賦樣本、選取率及推薦資料庫。
 ## Author: QFX
 ## X-Category: Data
+## X-Curse-Project-ID: 1627870
 ## X-QFX-Data-API: 1
 ## X-QFX-Data-Version: {data['version']}
 
