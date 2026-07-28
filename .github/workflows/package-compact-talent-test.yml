@@ -1,0 +1,52 @@
+name: Package Compact Talent Test
+
+on:
+  push:
+    branches:
+      - agent/compact-talent-data
+    paths:
+      - .github/workflows/package-compact-talent-test.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout test branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/compact-talent-data
+          fetch-depth: 0
+
+      - name: Validate and package database
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f QFXTalentData/QFXTalentData.toc
+          grep -q '^## Version: 2026.07.28.0724.00$' QFXTalentData/QFXTalentData.toc
+          grep -q '^## X-QFX-Selection-Format: 1$' QFXTalentData/QFXTalentData.toc
+          ! grep -q '\["samples"\]' QFXTalentData/SpecLoaders.lua
+          zip -qr "QFXTalentData-2026.07.28.0724.00.zip" QFXTalentData
+          unzip -t "QFXTalentData-2026.07.28.0724.00.zip"
+
+      - name: Record artifact run ID
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${GITHUB_RUN_ID}" > QFXTalentData/TEST_ARTIFACT_RUN_ID.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add QFXTalentData/TEST_ARTIFACT_RUN_ID.txt
+          git commit -m "Record compact talent test artifact run ${GITHUB_RUN_ID} [skip ci]"
+          git push origin HEAD:agent/compact-talent-data
+
+      - name: Upload test database
+        uses: actions/upload-artifact@v4
+        with:
+          name: QFXTalentData-2026.07.28.0724.00
+          path: QFXTalentData-2026.07.28.0724.00.zip
+          if-no-files-found: error
+          retention-days: 7
