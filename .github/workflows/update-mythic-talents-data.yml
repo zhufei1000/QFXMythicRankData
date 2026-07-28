@@ -14,6 +14,7 @@ on:
   push:
     branches:
       - main
+      - agent/compact-talent-data
     paths:
       - scripts/collect_mythicplus_talents.py
       - scripts/collect_raid_talents.py
