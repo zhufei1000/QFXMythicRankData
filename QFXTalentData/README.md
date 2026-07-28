@@ -2,7 +2,7 @@
 
 Unified global Mythic+ and Heroic/Mythic raid talent data.
 
-Version: `2026.07.27.1645.52`
+Version: `2026.07.28.0653.25`
 
 Mythic+ combinations: `320`
 
