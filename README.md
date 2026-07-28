@@ -141,6 +141,6 @@ The talent pipeline uses `RAIDERIO_ACCESS_KEY` when available and requires `WCL_
 
 The `Update Regional Mythic Rank Data` workflow runs twice daily at 09:17 and 21:17 China Standard Time and can be started manually. A normal same-season update makes about seven Raider.IO requests: one `static-data`, one shared `score-tiers`, and five regional `season-cutoffs` requests.
 
-The `Update QFX Talent Data` workflow runs twice daily. It collects global Mythic+ samples plus Heroic and Mythic raid samples, generates one `QFXTalentData` package, validates every Lua file with Lua 5.1, and commits only changed generated data.
+The `Update QFX Talent Data` workflow runs twice daily. It collects global Mythic+ samples plus Heroic and Mythic raid samples, generates one `QFXTalentData` package, validates every Lua file with Lua 5.1, and publishes changed data to CurseForge project `1627870` before committing it to `main`. A failed upload leaves `main` unchanged so the next scheduled run can retry safely.
 
 Only regional rank packages with publishable changes are built and passed to their validated CurseForge publishing step. The separate read-only `Validate Pull Request` workflow runs tests, Lua 5.1 validation, and regional package builds without contacting Raider.IO, Warcraft Logs, or CurseForge.
