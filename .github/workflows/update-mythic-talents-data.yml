@@ -18,6 +18,7 @@ on:
       - scripts/collect_mythicplus_talents.py
       - scripts/collect_raid_talents.py
       - scripts/build_talent_data.py
+      - scripts/build_talent_data_v2.py
       - scripts/probe_raiderio_spec_dungeon_v2.py
       - scripts/probe_raiderio_spec_dungeon_v4.py
       - scripts/probe_wcl_raid_talents_v1.py
@@ -26,6 +27,7 @@ on:
       - scripts/publish_talent_curseforge.py
       - scripts/templates/qfx_talent_data/**
       - tests/test_talent_data.py
+      - tests/test_talent_data_v2.py
       - tests/test_talent_statistics.py
       - tests/test_wcl_talent_export.py
       - tests/test_talent_curseforge_publish.py
@@ -73,6 +75,7 @@ jobs:
             scripts/collect_mythicplus_talents.py \
             scripts/collect_raid_talents.py \
             scripts/build_talent_data.py \
+            scripts/build_talent_data_v2.py \
             scripts/probe_raiderio_spec_dungeon_v2.py \
             scripts/probe_raiderio_spec_dungeon_v4.py \
             scripts/probe_wcl_raid_talents_v1.py \
@@ -159,12 +162,16 @@ jobs:
             --markdown artifacts/wcl_sporefall_mythic.md \
             --checkpoint artifacts/wcl_sporefall_mythic_checkpoint.json
 
-      - name: Generate unified QFXTalentData addon
+      - name: Generate split load-on-demand QFXTalentData addons
         id: package
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf QFXMythicTalents_Data
+          rm -rf \
+            QFXTalentData \
+            QFXTalentData_MythicPlus \
+            QFXTalentData_RaidHeroic \
+            QFXTalentData_RaidMythic
           python -c "import pathlib, sys; sys.path.insert(0, 'scripts'); from wcl_talent_export import TalentExporter; TalentExporter.download(cache_path=pathlib.Path('artifacts/raidbots_talents_live.json'))"
           raid_args=()
           for file in \
@@ -176,7 +183,7 @@ jobs:
               raid_args+=(--raid-input "${file}")
             fi
           done
-          python scripts/build_talent_data.py \
+          python scripts/build_talent_data_v2.py \
             --input artifacts/raiderio_mainstream_talents_v4.json \
             "${raid_args[@]}" \
             --talent-trees artifacts/raidbots_talents_live.json \
@@ -194,14 +201,33 @@ jobs:
 
       - name: Validate generated database
         run: |
-          python -m pytest -q tests/test_talent_data.py tests/test_talent_statistics.py tests/test_wcl_talent_export.py
-          find QFXTalentData -name '*.lua' -print0 | xargs -0 -n1 luac5.1 -p
+          python -m pytest -q \
+            tests/test_talent_data.py \
+            tests/test_talent_data_v2.py \
+            tests/test_talent_statistics.py \
+            tests/test_wcl_talent_export.py \
+            tests/test_talent_curseforge_publish.py
+          find \
+            QFXTalentData \
+            QFXTalentData_MythicPlus \
+            QFXTalentData_RaidHeroic \
+            QFXTalentData_RaidMythic \
+            -name '*.lua' -print0 | xargs -0 -n1 luac5.1 -p
           unzip -t "${{ steps.package.outputs.path }}"
-          test -f QFXTalentData/SpecLoaders.lua
+          test -f QFXTalentData/Schemas.lua
+          test ! -f QFXTalentData/SpecLoaders.lua
           test ! -d QFXTalentData/Classes
-          grep -q '\["selection"\]' QFXTalentData/SpecLoaders.lua
-          ! grep -q '\["samples"\]' QFXTalentData/SpecLoaders.lua
-          test "$(unzip -Z1 "${{ steps.package.outputs.path }}" | grep -c '^QFXTalentData/[^/]*$')" -eq 6
+          for addon in \
+            QFXTalentData_MythicPlus \
+            QFXTalentData_RaidHeroic \
+            QFXTalentData_RaidMythic; do
+            grep -q '^## LoadOnDemand: 1$' "${addon}/${addon}.toc"
+            grep -q '^## Dependencies: QFXTalentData$' "${addon}/${addon}.toc"
+            grep -q 'statsBlob=' "${addon}/Data.lua"
+            grep -q 'recommendationBlob=' "${addon}/Data.lua"
+            ! grep -q 'samples' "${addon}/Data.lua"
+          done
+          test "$(unzip -Z1 "${{ steps.package.outputs.path }}" | grep -c -E '^[^/]+/[^/]+$')" -eq 12
           grep -q 'slug="sporefall"' QFXTalentData/Common.lua
           grep -q 'id=3159' QFXTalentData/Common.lua
 
@@ -219,7 +245,7 @@ jobs:
             fi
           done
           if [[ -f QFXTalentData/README.md ]]; then
-            printf '\n## Generated unified database\n\n' >> "${GITHUB_STEP_SUMMARY}"
+            printf '\n## Generated split database\n\n' >> "${GITHUB_STEP_SUMMARY}"
             cat QFXTalentData/README.md >> "${GITHUB_STEP_SUMMARY}"
           fi
 
@@ -228,7 +254,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git add -A -- QFXTalentData
+          git add -A -- \
+            QFXTalentData \
+            QFXTalentData_MythicPlus \
+            QFXTalentData_RaidHeroic \
+            QFXTalentData_RaidMythic
           if git diff --cached --quiet; then
             echo "changed=false" >> "${GITHUB_OUTPUT}"
             echo "QFXTalentData is unchanged."

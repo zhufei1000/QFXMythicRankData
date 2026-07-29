@@ -26,20 +26,33 @@ def write_package(
     data_version: str = VERSION,
 ) -> pathlib.Path:
     path = directory / f"QFXTalentData-{VERSION}.zip"
-    toc = (
+    base_toc = (
         "## Interface: 120007\n"
         f"## Version: {VERSION}\n"
         f"## X-Curse-Project-ID: {project_id}\n"
+        "## X-QFX-Data-API: 2\n"
         f"## X-QFX-Data-Version: {data_version}\n"
     )
     members = {
         "QFXTalentData/Bootstrap.lua": "return\n",
         "QFXTalentData/Common.lua": "return\n",
         "QFXTalentData/Core.lua": "return\n",
-        "QFXTalentData/QFXTalentData.toc": toc,
+        "QFXTalentData/QFXTalentData.toc": base_toc,
         "QFXTalentData/README.md": "# QFXTalentData\n",
-        "QFXTalentData/SpecLoaders.lua": "return\n",
+        "QFXTalentData/Schemas.lua": "return\n",
     }
+    for addon, kind in talent.CONTENT_ADDONS.items():
+        members[f"{addon}/Data.lua"] = "return\n"
+        members[f"{addon}/{addon}.toc"] = (
+            "## Interface: 120007\n"
+            f"## Version: {VERSION}\n"
+            "## Dependencies: QFXTalentData\n"
+            "## LoadOnDemand: 1\n"
+            f"## X-Curse-Project-ID: {project_id}\n"
+            "## X-QFX-Data-API: 2\n"
+            f"## X-QFX-Data-Version: {data_version}\n"
+            f"## X-QFX-Content-Kind: {kind}\n"
+        )
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
         for name, content in members.items():
             archive.writestr(name, content)
@@ -47,7 +60,7 @@ def write_package(
 
 
 def test_project_id_is_embedded_in_source_and_generated_toc() -> None:
-    builder = (SCRIPTS / "build_talent_data.py").read_text(encoding="utf-8")
+    builder = (SCRIPTS / "build_talent_data_v2.py").read_text(encoding="utf-8")
     toc = (ROOT / "QFXTalentData/QFXTalentData.toc").read_text(
         encoding="utf-8"
     )
@@ -55,6 +68,16 @@ def test_project_id_is_embedded_in_source_and_generated_toc() -> None:
     assert talent.PROJECT_ID == 1627870
     assert marker in builder
     assert marker in toc
+
+
+def test_all_content_addons_are_load_on_demand() -> None:
+    for addon in talent.CONTENT_ADDONS:
+        toc = (
+            ROOT / addon / f"{addon}.toc"
+        ).read_text(encoding="utf-8")
+        assert "## Dependencies: QFXTalentData" in toc
+        assert "## LoadOnDemand: 1" in toc
+        assert "## X-Curse-Project-ID: 1627870" in toc
 
 
 def test_validates_exact_talent_package(tmp_path: pathlib.Path) -> None:
@@ -103,10 +126,9 @@ def test_workflow_uploads_changed_talent_data_before_pushing() -> None:
     ).read_text(encoding="utf-8")
     assert "group: curseforge-talent-publish" in workflow
     assert "cancel-in-progress: false" in workflow
-    assert (
-        "github.actor != 'github-actions[bot]' && "
-        "github.ref == 'refs/heads/main'"
-    ) in workflow
+    assert "github.actor != 'github-actions[bot]'" in workflow
+    assert "github.ref == 'refs/heads/main'" in workflow
+    assert "github.event_name == 'workflow_dispatch'" in workflow
     assert "Detect generated database changes" in workflow
     assert "python scripts/publish_talent_curseforge.py" in workflow
     assert "CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}" in workflow

@@ -1,16 +1,16 @@
 ## Interface: 120007
-## Version: 2026.07.29.0657.56
+## Version: 2026.07.29.1137.59
 ## Title: |cff00ccffQFX Talent Data|r
-## Notes: Global Mythic+ and Heroic/Mythic raid talent samples, selection rates, and recommendations.
-## Notes-zhCN: 全球大秘境与英雄/史诗团本天赋样本、选取率及推荐数据库。
-## Notes-zhTW: 全球傳奇鑰石與英雄/傳奇團本天賦樣本、選取率及推薦資料庫。
+## Notes: Core API and manifests for QFX talent recommendations.
+## Notes-zhCN: QFX天赋推荐数据库核心与清单。
+## Notes-zhTW: QFX天賦推薦資料庫核心與清單。
 ## Author: QFX
 ## X-Category: Data
 ## X-Curse-Project-ID: 1627870
-## X-QFX-Data-API: 1
-## X-QFX-Data-Version: 2026.07.29.0657.56
+## X-QFX-Data-API: 2
+## X-QFX-Data-Version: 2026.07.29.1137.59
 
 Core.lua
 Common.lua
-SpecLoaders.lua
+Schemas.lua
 Bootstrap.lua
