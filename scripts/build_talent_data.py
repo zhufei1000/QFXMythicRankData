@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse, datetime as dt, json, pathlib, shutil, zipfile
+import argparse, datetime as dt, json, pathlib, shutil, sys, zipfile
 from typing import Any
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+SCRIPTS = ROOT / "scripts"
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
 ADDON = "QFXTalentData"
 TEMPLATE_DIR = ROOT / "scripts" / "templates" / "qfx_talent_data"
 CLASSES = {
@@ -25,6 +28,7 @@ def args() -> argparse.Namespace:
     p.add_argument("--raid-input", action="append", default=[], type=pathlib.Path)
     p.add_argument("--dungeon-locales", type=pathlib.Path, default=ROOT / "config/mythic_talents_dungeons.json")
     p.add_argument("--raid-locales", type=pathlib.Path, default=ROOT / "config/mythic_talents_raids.json")
+    p.add_argument("--talent-trees", type=pathlib.Path)
     p.add_argument("--output", type=pathlib.Path, default=ROOT / ADDON)
     p.add_argument("--zip", dest="zip_path", type=pathlib.Path)
     return p.parse_args()
@@ -108,7 +112,25 @@ def raid_manifest(cfg: dict[str, Any]):
     return out, bosses
 
 
-def mplus(raw: dict[str, Any]):
+def packed_record(
+    spec_id: int,
+    recommended: str,
+    loadouts: list[str],
+    exporter: Any | None,
+) -> dict[str, Any]:
+    if exporter is None:
+        return {"recommended": recommended, "samples": loadouts}
+    from talent_statistics import build_statistics
+
+    statistics = build_statistics(exporter, spec_id, loadouts, recommended)
+    return {
+        "recommended": recommended,
+        "sampleCount": len(loadouts),
+        "selection": statistics.encoded,
+    }
+
+
+def mplus(raw: dict[str, Any], exporter: Any | None = None):
     names, out = {}, {}
     for row in raw.get("specs", []):
         if isinstance(row, dict) and pos(row.get("spec_id")): names[row["spec_id"]] = txt(row.get("spec")) or str(row["spec_id"])
@@ -119,12 +141,16 @@ def mplus(raw: dict[str, Any]):
         ss = samples(row.get("sample_loadouts")); rec = txt(row.get("recommended_loadout"))
         if not ss: continue
         if rec not in ss: rec = ss[0]
-        out[(sid, did)] = {"recommended": rec, "samples": ss}
+        out[(sid, did)] = packed_record(sid, rec, ss, exporter)
         names.setdefault(sid, txt(row.get("spec")) or str(sid))
     return names, out
 
 
-def raid_data(raws: list[dict[str, Any]], boss_to_raid: dict[int, int]):
+def raid_data(
+    raws: list[dict[str, Any]],
+    boss_to_raid: dict[int, int],
+    exporter: Any | None = None,
+):
     names, out, diffs = {}, {}, {}
     for raw in raws:
         diff = pos(raw.get("difficulty_id"))
@@ -138,15 +164,26 @@ def raid_data(raws: list[dict[str, Any]], boss_to_raid: dict[int, int]):
             ss = samples(raw_samples); rec = txt(row.get("recommended_loadout"))
             if not ss: continue
             if rec not in ss: rec = ss[0]
-            out[(sid, rid, bid, diff)] = {"recommended": rec, "samples": ss}
+            out[(sid, rid, bid, diff)] = packed_record(sid, rec, ss, exporter)
             names.setdefault(sid, txt(row.get("spec")) or str(sid))
     return names, out, diffs
 
 
 def record(v: dict[str, Any], ind: str) -> list[str]:
-    out = [ind+"{", ind+f"  [\"recommended\"]={q(v['recommended'])},", ind+f"  [\"sampleCount\"]={len(v['samples'])},", ind+"  [\"samples\"]={"]
-    out += [ind+f"    {q(x)}," for x in v["samples"]]
-    return out + [ind+"  },", ind+"  [\"sourceRankLimit\"]=10,", ind+"}"]
+    out = [ind+"{", ind+f"  [\"recommended\"]={q(v['recommended'])},"]
+    if "selection" in v:
+        out += [
+            ind+f"  [\"sampleCount\"]={v['sampleCount']},",
+            ind+f"  [\"selection\"]={q(v['selection'])},",
+        ]
+    else:
+        out += [
+            ind+f"  [\"sampleCount\"]={len(v['samples'])},",
+            ind+"  [\"samples\"]={",
+            *[ind+f"    {q(x)}," for x in v["samples"]],
+            ind+"  },",
+        ]
+    return out + [ind+"  [\"sourceRankLimit\"]=10,", ind+"}"]
 
 
 def common(data: dict[str, Any]) -> str:
@@ -257,8 +294,13 @@ Bootstrap.lua
 
 def build(a: argparse.Namespace):
     mr=load(a.input); rr=[load(x) for x in a.raid_input if x.is_file()]
+    talent_trees = getattr(a, "talent_trees", None)
+    exporter = None
+    if talent_trees:
+        from wcl_talent_export import TalentExporter
+        exporter = TalentExporter.from_path(talent_trees)
     d=dungeon_manifest(mr,load(a.dungeon_locales)); raids,bosses=raid_manifest(load(a.raid_locales))
-    sn,m=mplus(mr); rn,rdata,diffs=raid_data(rr,bosses); sn.update(rn)
+    sn,m=mplus(mr, exporter); rn,rdata,diffs=raid_data(rr,bosses, exporter); sn.update(rn)
     generated,ver=version([mr,*rr])
     data={"generated":generated,"version":ver,"seasonName":txt(mr.get("season_name")) or "Unknown season","seasonSlug":txt(mr.get("season_slug")) or "unknown","dungeons":d,"raids":raids,"diffs":diffs,"specNames":sn,"mplus":m,"raidData":rdata}
     if a.output.exists(): shutil.rmtree(a.output)

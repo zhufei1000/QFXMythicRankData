@@ -45,6 +45,44 @@ class BitWriter:
         return "".join(BASE64[value] for value in self.values)
 
 
+class BitReader:
+    def __init__(self, text: str) -> None:
+        if not isinstance(text, str) or not text:
+            raise TalentExportError("talent loadout string is empty")
+        values = []
+        for character in text:
+            value = BASE64.find(character)
+            if value < 0:
+                raise TalentExportError(
+                    f"talent loadout contains invalid character {character!r}"
+                )
+            values.append(value)
+        self.values = values
+        self.offset = 0
+
+    def read(self, width: int) -> int:
+        value = 0
+        for bit_index in range(width):
+            character_index, character_bit = divmod(self.offset, 6)
+            if character_index >= len(self.values):
+                raise TalentExportError("talent loadout ended unexpectedly")
+            bit = (self.values[character_index] >> character_bit) & 1
+            value |= bit << bit_index
+            self.offset += 1
+        return value
+
+    def validate_padding(self) -> None:
+        remaining = len(self.values) * 6 - self.offset
+        if remaining < 0 or remaining > 5:
+            raise TalentExportError(
+                f"talent loadout has {remaining} unexpected trailing bits"
+            )
+        while remaining:
+            if self.read(1):
+                raise TalentExportError("talent loadout has non-zero padding")
+            remaining -= 1
+
+
 @dataclass(frozen=True)
 class Node:
     node_id: int
@@ -75,9 +113,18 @@ def iter_talents(value: Any) -> Iterable[tuple[int, int]]:
 
 class TalentExporter:
     def __init__(self, trees: Iterable[dict[str, Any]]) -> None:
+        raw_trees = list(trees)
+        shared_nodes: dict[int, Node] = {}
+        for raw_tree in raw_trees:
+            for group in ("classNodes", "specNodes", "heroNodes", "subTreeNodes"):
+                for raw_node in raw_tree.get(group) or []:
+                    node = self._parse_node(raw_node)
+                    if node:
+                        shared_nodes.setdefault(node.node_id, node)
+
         self.trees: dict[int, TalentTree] = {}
-        for raw_tree in trees:
-            tree = self._parse_tree(raw_tree)
+        for raw_tree in raw_trees:
+            tree = self._parse_tree(raw_tree, shared_nodes)
             if tree.spec_id in self.trees:
                 raise TalentExportError(f"duplicate talent tree for spec {tree.spec_id}")
             self.trees[tree.spec_id] = tree
@@ -110,30 +157,47 @@ class TalentExporter:
         return cls(payload)
 
     @staticmethod
-    def _parse_tree(raw: dict[str, Any]) -> TalentTree:
+    def _parse_node(raw_node: dict[str, Any]) -> Node | None:
+        node_id = raw_node.get("id")
+        raw_entries = raw_node.get("entries") or []
+        entries = tuple(
+            entry["id"] for entry in raw_entries if isinstance(entry.get("id"), int)
+        )
+        if not isinstance(node_id, int) or not entries:
+            return None
+        return Node(
+            node_id=node_id,
+            node_type=str(raw_node.get("type") or "single"),
+            max_ranks=max(1, int(raw_node.get("maxRanks") or 1)),
+            free=bool(raw_node.get("freeNode")),
+            entries=entries,
+        )
+
+    @classmethod
+    def _parse_tree(
+        cls,
+        raw: dict[str, Any],
+        shared_nodes: dict[int, Node],
+    ) -> TalentTree:
         spec_id = raw.get("specId")
         order = raw.get("fullNodeOrder")
         if not isinstance(spec_id, int) or not isinstance(order, list):
             raise TalentExportError("invalid Raidbots talent tree")
 
-        nodes: dict[int, Node] = {}
-        entry_to_node: dict[int, int] = {}
+        local_nodes: dict[int, Node] = {}
         for group in ("classNodes", "specNodes", "heroNodes", "subTreeNodes"):
             for raw_node in raw.get(group) or []:
-                node_id = raw_node.get("id")
-                raw_entries = raw_node.get("entries") or []
-                entries = tuple(entry["id"] for entry in raw_entries if isinstance(entry.get("id"), int))
-                if not isinstance(node_id, int) or not entries:
-                    continue
-                node = Node(
-                    node_id=node_id,
-                    node_type=str(raw_node.get("type") or "single"),
-                    max_ranks=max(1, int(raw_node.get("maxRanks") or 1)),
-                    free=bool(raw_node.get("freeNode")),
-                    entries=entries,
-                )
+                node = cls._parse_node(raw_node)
+                if node:
+                    local_nodes[node.node_id] = node
+
+        nodes: dict[int, Node] = {}
+        entry_to_node: dict[int, int] = {}
+        for node_id in order:
+            node = local_nodes.get(node_id) or shared_nodes.get(node_id)
+            if node:
                 nodes[node_id] = node
-                for entry_id in entries:
+                for entry_id in node.entries:
                     entry_to_node[entry_id] = node_id
 
         return TalentTree(
@@ -217,3 +281,60 @@ class TalentExporter:
                 stream.add(2, entry_index)
 
         return stream.finish()
+
+    def decode(
+        self,
+        loadout_text: str,
+        expected_spec_id: int | None = None,
+    ) -> dict[int, tuple[int, int]]:
+        stream = BitReader(loadout_text)
+        serialization_version = stream.read(8)
+        if serialization_version != SERIALIZATION_VERSION:
+            raise TalentExportError(
+                f"unsupported talent serialization version {serialization_version}"
+            )
+        spec_id = stream.read(16)
+        if expected_spec_id is not None and spec_id != expected_spec_id:
+            raise TalentExportError(
+                f"talent loadout spec {spec_id} does not match expected spec "
+                f"{expected_spec_id}"
+            )
+        for _ in range(16):
+            stream.read(8)
+
+        tree = self.trees.get(spec_id)
+        if not tree:
+            raise TalentExportError(f"no current talent tree for spec {spec_id}")
+
+        states: dict[int, tuple[int, int]] = {}
+        for node_id in tree.full_node_order:
+            node = tree.nodes.get(node_id)
+            if not stream.read(1):
+                continue
+            if not node:
+                raise TalentExportError(
+                    f"spec {spec_id} selects unknown node {node_id}"
+                )
+
+            purchased = bool(stream.read(1))
+            if not purchased:
+                states[node_id] = (node.entries[0], node.max_ranks)
+                continue
+
+            partially_ranked = bool(stream.read(1))
+            rank = stream.read(6) if partially_ranked else node.max_ranks
+            if rank <= 0 or rank > node.max_ranks:
+                raise TalentExportError(
+                    f"spec {spec_id} node {node_id} has invalid rank {rank}"
+                )
+
+            is_choice = bool(stream.read(1))
+            entry_index = stream.read(2) if is_choice else 0
+            if entry_index >= len(node.entries):
+                raise TalentExportError(
+                    f"spec {spec_id} node {node_id} has invalid entry index "
+                    f"{entry_index}"
+                )
+            states[node_id] = (node.entries[entry_index], rank)
+        stream.validate_padding()
+        return states

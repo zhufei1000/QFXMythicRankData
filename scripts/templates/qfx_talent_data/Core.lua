@@ -37,7 +37,7 @@ local function CompactProvider(provider)
         return
     end
     local function DropSelection(recommendation)
-        if type(recommendation) == "table" then
+        if type(recommendation) == "table" and type(recommendation.selection) == "table" then
             recommendation.selection = nil
         end
     end
