@@ -24,6 +24,7 @@ def write_package(
     *,
     project_id: int = talent.PROJECT_ID,
     data_version: str = VERSION,
+    min_display_version: str = talent.MIN_DISPLAY_VERSION,
 ) -> pathlib.Path:
     path = directory / f"QFXTalentData-{VERSION}.zip"
     base_toc = (
@@ -32,6 +33,7 @@ def write_package(
         f"## X-Curse-Project-ID: {project_id}\n"
         "## X-QFX-Data-API: 2\n"
         f"## X-QFX-Data-Version: {data_version}\n"
+        f"## X-QFX-Min-Display-Version: {min_display_version}\n"
     )
     members = {
         "QFXTalentData/Bootstrap.lua": "return\n",
@@ -51,6 +53,7 @@ def write_package(
             f"## X-Curse-Project-ID: {project_id}\n"
             "## X-QFX-Data-API: 2\n"
             f"## X-QFX-Data-Version: {data_version}\n"
+            f"## X-QFX-Min-Display-Version: {min_display_version}\n"
             f"## X-QFX-Content-Kind: {kind}\n"
         )
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -65,9 +68,13 @@ def test_project_id_is_embedded_in_source_and_generated_toc() -> None:
         encoding="utf-8"
     )
     marker = "## X-Curse-Project-ID: 1627870"
+    compatibility = "## X-QFX-Min-Display-Version: 0.5.0"
     assert talent.PROJECT_ID == 1627870
     assert marker in builder
     assert marker in toc
+    assert 'MIN_DISPLAY_VERSION = "0.5.0"' in builder
+    assert "## X-QFX-Min-Display-Version: {MIN_DISPLAY_VERSION}" in builder
+    assert compatibility in toc
 
 
 def test_all_content_addons_are_load_on_demand() -> None:
@@ -78,6 +85,7 @@ def test_all_content_addons_are_load_on_demand() -> None:
         assert "## Dependencies: QFXTalentData" in toc
         assert "## LoadOnDemand: 1" in toc
         assert "## X-Curse-Project-ID: 1627870" in toc
+        assert "## X-QFX-Min-Display-Version: 0.5.0" in toc
 
 
 def test_validates_exact_talent_package(tmp_path: pathlib.Path) -> None:
@@ -100,6 +108,13 @@ def test_rejects_mismatched_data_version(tmp_path: pathlib.Path) -> None:
         )
 
 
+def test_rejects_incompatible_display_version(tmp_path: pathlib.Path) -> None:
+    with pytest.raises(publisher.PublishError, match="display addon version"):
+        talent.validate_artifact(
+            write_package(tmp_path, min_display_version="0.4.9")
+        )
+
+
 def test_validate_mode_never_requires_api_token(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -118,6 +133,7 @@ def test_validate_mode_never_requires_api_token(
     assert result == 0
     assert '"status": "validated"' in report.read_text(encoding="utf-8")
     assert f"Version: {VERSION}" in changelog.read_text(encoding="utf-8")
+    assert "0.5.0 or newer" in changelog.read_text(encoding="utf-8")
 
 
 def test_workflow_uploads_changed_talent_data_before_pushing() -> None:
@@ -129,11 +145,14 @@ def test_workflow_uploads_changed_talent_data_before_pushing() -> None:
     assert "github.actor != 'github-actions[bot]'" in workflow
     assert "github.ref == 'refs/heads/main'" in workflow
     assert "github.event_name == 'workflow_dispatch'" in workflow
+    assert "Require complete collection and publishing credentials" in workflow
+    assert "refusing to build or publish an incomplete database" in workflow
+    assert "omitting raid data for this run" not in workflow
     assert "Detect generated database changes" in workflow
     assert "python scripts/publish_talent_curseforge.py" in workflow
     assert "CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}" in workflow
     assert (
-        workflow.count("CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}") == 1
+        workflow.count("CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}") == 2
     )
     assert workflow.index(
         "Upload QFXTalentData to CurseForge"

@@ -3,6 +3,7 @@ if not API then return end
 local manifest={
   apiVersion=2,
   dataVersion="2026.07.29.1137.59",
+  minDisplayVersion="0.5.0",
   generatedAt="2026-07-29T11:37:59.420207+00:00",
   seasonName="MN Season 1",
   seasonSlug="season-mn-1",

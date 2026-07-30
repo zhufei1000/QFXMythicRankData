@@ -35,7 +35,14 @@ jobs:
           python -m py_compile \
             scripts/collect_mythicplus_talents.py \
             scripts/collect_raid_talents.py \
-            scripts/build_talent_data.py
+            scripts/build_talent_data.py \
+            scripts/build_talent_data_v2.py \
+            scripts/probe_raiderio_spec_dungeon_v2.py \
+            scripts/probe_raiderio_spec_dungeon_v4.py \
+            scripts/probe_wcl_raid_talents_v1.py \
+            scripts/wcl_talent_export.py \
+            scripts/talent_statistics.py \
+            scripts/publish_talent_curseforge.py
 
       - name: Verify shared Core.lua synchronization
         run: python scripts/sync_core.py --check
@@ -54,10 +61,12 @@ jobs:
             luac5.1 -p "QFXMythicRankData_${region}/Core.lua"
             luac5.1 -p "QFXMythicRankData_${region}/Data.lua"
           done
-          if [ -d QFXTalentData ]; then
-            find QFXTalentData -name '*.lua' -print0 \
-              | xargs -0 -n1 luac5.1 -p
-          fi
+          find \
+            QFXTalentData \
+            QFXTalentData_MythicPlus \
+            QFXTalentData_RaidHeroic \
+            QFXTalentData_RaidMythic \
+            -name '*.lua' -print0 | xargs -0 -n1 luac5.1 -p
 
       - name: Build all regional packages
         run: python scripts/build_packages.py

@@ -129,6 +129,12 @@ def test_v2_package_is_four_addons_with_load_on_demand_children(
     assert "C_AddOns.LoadAddOn" in core
     assert "GetRecommendedDungeonTalent" in core
     assert "GetRecommendedRaidTalent" in core
+    assert "GetMinimumDisplayVersion" in core
+    common = (output / "Common.lua").read_text(encoding="utf-8")
+    assert 'minDisplayVersion="0.5.0"' in common
+    assert "## X-QFX-Min-Display-Version: 0.5.0" in (
+        output / "QFXTalentData.toc"
+    ).read_text(encoding="utf-8")
 
     expected_recommendations = {
         "QFXTalentData_MythicPlus": "MPLUS-OPAQUE",
@@ -142,6 +148,7 @@ def test_v2_package_is_four_addons_with_load_on_demand_children(
         assert "## Dependencies: QFXTalentData" in toc
         assert "## LoadOnDemand: 1" in toc
         assert "## X-Curse-Project-ID: 1627870" in toc
+        assert "## X-QFX-Min-Display-Version: 0.5.0" in toc
         assert recommendation in lua
         assert "sample_loadouts" not in lua
         assert "samples=" not in lua

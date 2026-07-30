@@ -83,27 +83,32 @@ jobs:
             scripts/talent_statistics.py \
             scripts/publish_talent_curseforge.py
 
+      - name: Require complete collection and publishing credentials
+        shell: bash
+        env:
+          RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          for name in \
+            RAIDERIO_ACCESS_KEY \
+            WCL_CLIENT_ID \
+            WCL_CLIENT_SECRET \
+            CF_API_TOKEN; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Required secret ${name} is missing; refusing to build or publish an incomplete database."
+              exit 1
+            fi
+          done
+
       - name: Collect ten global Mythic+ talent samples
         env:
           RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
         run: python scripts/collect_mythicplus_talents.py
 
-      - name: Check Warcraft Logs credentials
-        id: wcl
-        shell: bash
-        env:
-          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
-          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
-        run: |
-          if [[ -n "${WCL_CLIENT_ID}" && -n "${WCL_CLIENT_SECRET}" ]]; then
-            echo "available=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "available=false" >> "${GITHUB_OUTPUT}"
-            echo "::warning::WCL credentials are missing; retaining Mythic+ data and omitting raid data for this run."
-          fi
-
       - name: Collect original tier Heroic raid talents
-        if: steps.wcl.outputs.available == 'true'
         env:
           WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
           WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
@@ -118,7 +123,6 @@ jobs:
             --checkpoint artifacts/wcl_tier_heroic_checkpoint.json
 
       - name: Collect original tier Mythic raid talents
-        if: steps.wcl.outputs.available == 'true'
         env:
           WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
           WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
@@ -133,7 +137,6 @@ jobs:
             --checkpoint artifacts/wcl_tier_mythic_checkpoint.json
 
       - name: Collect Sporefall Heroic Rotmire talents
-        if: steps.wcl.outputs.available == 'true'
         env:
           WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
           WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
@@ -148,7 +151,6 @@ jobs:
             --checkpoint artifacts/wcl_sporefall_heroic_checkpoint.json
 
       - name: Collect Sporefall Mythic Rotmire talents
-        if: steps.wcl.outputs.available == 'true'
         env:
           WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
           WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
@@ -217,12 +219,17 @@ jobs:
           test -f QFXTalentData/Schemas.lua
           test ! -f QFXTalentData/SpecLoaders.lua
           test ! -d QFXTalentData/Classes
+          grep -q '^## X-QFX-Min-Display-Version: 0.5.0$' \
+            QFXTalentData/QFXTalentData.toc
+          grep -q 'minDisplayVersion="0.5.0"' QFXTalentData/Common.lua
           for addon in \
             QFXTalentData_MythicPlus \
             QFXTalentData_RaidHeroic \
             QFXTalentData_RaidMythic; do
             grep -q '^## LoadOnDemand: 1$' "${addon}/${addon}.toc"
             grep -q '^## Dependencies: QFXTalentData$' "${addon}/${addon}.toc"
+            grep -q '^## X-QFX-Min-Display-Version: 0.5.0$' \
+              "${addon}/${addon}.toc"
             grep -q 'statsBlob=' "${addon}/Data.lua"
             grep -q 'recommendationBlob=' "${addon}/Data.lua"
             ! grep -q 'samples' "${addon}/Data.lua"
@@ -290,7 +297,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Update QFXTalentData ${VERSION} with Sporefall [skip ci]"
+          git commit -m "Update QFXTalentData ${VERSION} [skip ci]"
           echo "sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
 
       - name: Upload QFXTalentData package Artifact

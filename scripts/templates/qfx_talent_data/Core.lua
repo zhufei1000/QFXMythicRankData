@@ -59,6 +59,7 @@ function API:RegisterDataManifest(manifest)
     if type(manifest) ~= "table"
         or tonumber(manifest.apiVersion) ~= self.apiVersion
         or type(manifest.dataVersion) ~= "string"
+        or type(manifest.minDisplayVersion) ~= "string"
         or type(manifest.contentModules) ~= "table"
     then
         return false, "INVALID_MANIFEST"
@@ -102,6 +103,10 @@ end
 
 function API:GetManifest()
     return self.manifest
+end
+
+function API:GetMinimumDisplayVersion()
+    return self.manifest and self.manifest.minDisplayVersion or nil
 end
 
 function API:GetCurrentSpecID()

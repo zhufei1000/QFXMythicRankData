@@ -32,6 +32,7 @@ from wcl_talent_export import TalentExporter
 
 API_VERSION = 2
 FORMAT_VERSION = 2
+MIN_DISPLAY_VERSION = "0.5.0"
 BASE_ADDON = "QFXTalentData"
 MODULES = {
     "mythicplus": "QFXTalentData_MythicPlus",
@@ -195,6 +196,7 @@ def manifest_file(data: dict[str, Any]) -> str:
         "local manifest={",
         f"  apiVersion={API_VERSION},",
         f"  dataVersion={q(data['version'])},",
+        f"  minDisplayVersion={q(MIN_DISPLAY_VERSION)},",
         f"  generatedAt={q(data['generated'])},",
         f"  seasonName={q(data['seasonName'])},",
         f"  seasonSlug={q(data['seasonSlug'])},",
@@ -370,6 +372,7 @@ def base_toc(version: str) -> str:
 ## X-Curse-Project-ID: 1627870
 ## X-QFX-Data-API: {API_VERSION}
 ## X-QFX-Data-Version: {version}
+## X-QFX-Min-Display-Version: {MIN_DISPLAY_VERSION}
 
 Core.lua
 Common.lua
@@ -397,6 +400,7 @@ def module_toc(kind: str, version: str) -> str:
 ## X-Curse-Project-ID: 1627870
 ## X-QFX-Data-API: {API_VERSION}
 ## X-QFX-Data-Version: {version}
+## X-QFX-Min-Display-Version: {MIN_DISPLAY_VERSION}
 ## X-QFX-Content-Kind: {kind}
 
 Data.lua
@@ -449,6 +453,7 @@ def write_package(
         "# QFXTalentData\n\n"
         "Low-allocation V2 talent data split into three load-on-demand modules.\n\n"
         f"Version: `{data['version']}`\n\n"
+        f"Minimum display addon version: `{MIN_DISPLAY_VERSION}`\n\n"
         f"Mythic+ combinations: `{module_counts['mythicplus']}`\n\n"
         f"Heroic raid combinations: `{module_counts['raidHeroic']}`\n\n"
         f"Mythic raid combinations: `{module_counts['raidMythic']}`\n",

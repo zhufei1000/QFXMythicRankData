@@ -11,6 +11,7 @@
 ## X-Curse-Project-ID: 1627870
 ## X-QFX-Data-API: 2
 ## X-QFX-Data-Version: 2026.07.29.1137.59
+## X-QFX-Min-Display-Version: 0.5.0
 ## X-QFX-Content-Kind: raidHeroic
 
 Data.lua
