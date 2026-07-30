@@ -88,3 +88,34 @@ def test_encodes_blizzard_header_and_selected_nodes() -> None:
 def test_rejects_unknown_current_tree_entry() -> None:
     with pytest.raises(TalentExportError, match="missing from current talent data"):
         TalentExporter(talent_tree()).encode(250, {999: 1})
+
+
+def test_decode_round_trips_selected_entries() -> None:
+    exporter = TalentExporter(talent_tree())
+    encoded = exporter.encode(250, {100: 1, 201: 1, 300: 1, 301: 1})
+
+    assert exporter.decode(encoded, 250) == {
+        10: (100, 1),
+        20: (201, 1),
+        30: (300, 2),
+    }
+
+
+def test_decode_resolves_shared_node_omitted_from_spec_group() -> None:
+    trees = talent_tree() + [{
+        "specId": 251,
+        "fullNodeOrder": [10],
+        "classNodes": [],
+    }]
+    exporter = TalentExporter(trees)
+    encoded = exporter.encode(251, {100: 1})
+
+    assert exporter.decode(encoded, 251) == {10: (100, 1)}
+
+
+def test_decode_rejects_unconsumed_trailing_bits() -> None:
+    exporter = TalentExporter(talent_tree())
+    encoded = exporter.encode(250, {100: 1})
+
+    with pytest.raises(TalentExportError, match="trailing bits"):
+        exporter.decode(encoded + "A", 250)

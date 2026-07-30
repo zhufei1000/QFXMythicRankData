@@ -66,6 +66,7 @@ def test_partial_heroic_and_mythic_data_are_kept_without_full_matrix(tmp_path: P
         raid_input=[write_json(tmp_path / "heroic.json", heroic), write_json(tmp_path / "mythic.json", mythic_empty)],
         dungeon_locales=write_json(tmp_path / "dungeons.json", dungeons),
         raid_locales=write_json(tmp_path / "raids.json", raids),
+        talent_trees=None,
         output=tmp_path / "QFXTalentData",
         zip_path=tmp_path / "QFXTalentData.zip",
     )
@@ -113,3 +114,45 @@ def test_recommended_string_is_replaced_by_a_real_sample():
     })
     assert spec_names[70] == "Retribution Paladin"
     assert records[(70, 1)]["recommended"] == "REAL"
+
+
+def test_packed_record_keeps_one_recommendation_and_no_sample_list():
+    from talent_statistics import unpack_counts
+    from wcl_talent_export import TalentExporter
+
+    exporter = TalentExporter([{
+        "specId": 70,
+        "fullNodeOrder": [10],
+        "classNodes": [{
+            "id": 10,
+            "type": "single",
+            "maxRanks": 1,
+            "entries": [{"id": 100}],
+        }],
+    }])
+    selected = exporter.encode(70, {100: 1})
+    unselected = exporter.encode(70, {})
+    _, records = module.mplus({
+        "recommendations": [{
+            "dungeon_id": 1,
+            "spec_id": 70,
+            "spec": "Retribution Paladin",
+            "recommended_loadout": selected,
+            "sample_loadouts": [
+                {"loadout": selected},
+                {"loadout": selected},
+                {"loadout": unselected},
+            ],
+        }]
+    }, exporter)
+
+    record = records[(70, 1)]
+    valid_samples, counts = unpack_counts(record["selection"])
+    rendered = "\n".join(module.record(record, ""))
+
+    assert record["recommended"] == selected
+    assert record["sampleCount"] == 3
+    assert valid_samples == 3
+    assert counts[10][(100, 1)] == 2
+    assert "[\"samples\"]" not in rendered
+    assert rendered.count(selected) == 1

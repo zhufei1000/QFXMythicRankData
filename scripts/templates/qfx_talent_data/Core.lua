@@ -2,12 +2,25 @@ local API = _G.QFXTalentData or {}
 _G.QFXTalentData = API
 
 API.name = "QFXTalentData"
-API.apiVersion = 1
+API.apiVersion = 2
 API.providers = API.providers or {}
-API.specProviders = API.specProviders or {}
+API.contentModules = API.contentModules or {}
+API.schemas = API.schemas or {}
 API.manifest = API.manifest
 API.activeSpecID = API.activeSpecID
-_G.QFXTalentData_Loaders = _G.QFXTalentData_Loaders or {}
+API.activeSpecData = API.activeSpecData
+API.currentRecord = nil
+API.currentRecordKind = nil
+API.currentRecordSpecID = nil
+API.currentRecordKey1 = nil
+API.currentRecordKey2 = nil
+API.lastError = nil
+
+local MODULE_MYTHIC_PLUS = "mythicplus"
+local MODULE_RAID_HEROIC = "raidHeroic"
+local MODULE_RAID_MYTHIC = "raidMythic"
+local DIFFICULTY_HEROIC = 4
+local DIFFICULTY_MYTHIC = 5
 
 local function ResolveSpecID(specID)
     if type(specID) == "number" then
@@ -24,59 +37,67 @@ local function ResolveSpecID(specID)
     return type(currentSpecID) == "number" and currentSpecID or nil
 end
 
-local function CurrentClassToken()
-    if type(UnitClass) ~= "function" then
-        return nil
+local function RaidModuleKind(difficultyID)
+    if difficultyID == DIFFICULTY_HEROIC then
+        return MODULE_RAID_HEROIC
     end
-    local _, classToken = UnitClass("player")
-    return classToken
+    if difficultyID == DIFFICULTY_MYTHIC then
+        return MODULE_RAID_MYTHIC
+    end
+    return nil
 end
 
-local function CompactProvider(provider)
-    if not _G.QFXTalentDataCompactMode or type(provider) ~= "table" or type(provider.specs) ~= "table" then
-        return
-    end
-    local function DropSelection(recommendation)
-        if type(recommendation) == "table" then
-            recommendation.selection = nil
-        end
-    end
-    for _, specData in pairs(provider.specs) do
-        for _, recommendation in pairs(specData.dungeons or {}) do
-            DropSelection(recommendation)
-        end
-        for _, raidData in pairs(specData.raids or {}) do
-            for _, bossData in pairs(raidData.bosses or {}) do
-                for _, recommendation in pairs(bossData.difficulties or {}) do
-                    DropSelection(recommendation)
-                end
-            end
-        end
-    end
-    provider.qfxmtCompacted = true
+local function ClearCurrentRecord(self)
+    self.currentRecord = nil
+    self.currentRecordKind = nil
+    self.currentRecordSpecID = nil
+    self.currentRecordKey1 = nil
+    self.currentRecordKey2 = nil
 end
 
 function API:RegisterDataManifest(manifest)
-    if type(manifest) ~= "table" then
+    if type(manifest) ~= "table"
+        or tonumber(manifest.apiVersion) ~= self.apiVersion
+        or type(manifest.dataVersion) ~= "string"
+        or type(manifest.minDisplayVersion) ~= "string"
+        or type(manifest.contentModules) ~= "table"
+    then
         return false, "INVALID_MANIFEST"
     end
     self.manifest = manifest
+    self.lastError = nil
     return true
 end
 
-function API:RegisterDataProvider(provider)
-    if type(provider) ~= "table"
-        or type(provider.classToken) ~= "string"
-        or type(provider.specs) ~= "table"
+function API:RegisterSchemas(dataVersion, schemas)
+    if type(dataVersion) ~= "string"
+        or type(schemas) ~= "table"
+        or (self.manifest and dataVersion ~= self.manifest.dataVersion)
     then
-        return false, "INVALID_PROVIDER"
+        return false, "INVALID_SCHEMAS"
     end
+    self.schemas = schemas
+    self.schemaDataVersion = dataVersion
+    self.lastError = nil
+    return true
+end
 
-    self.providers[provider.classToken] = provider
-    for specID in pairs(provider.specs) do
-        self.specProviders[specID] = provider
-        self.activeSpecID = specID
+function API:RegisterContentModule(module)
+    if type(module) ~= "table"
+        or tonumber(module.apiVersion) ~= self.apiVersion
+        or tonumber(module.formatVersion) ~= 2
+        or type(module.kind) ~= "string"
+        or type(module.dataVersion) ~= "string"
+        or type(module.statsBlob) ~= "string"
+        or type(module.recommendationBlob) ~= "string"
+        or type(module.records) ~= "table"
+        or type(module.stride) ~= "number"
+        or (self.manifest and module.dataVersion ~= self.manifest.dataVersion)
+    then
+        return false, "INVALID_CONTENT_MODULE"
     end
+    self.contentModules[module.kind] = module
+    self.lastError = nil
     return true
 end
 
@@ -84,37 +105,24 @@ function API:GetManifest()
     return self.manifest
 end
 
+function API:GetMinimumDisplayVersion()
+    return self.manifest and self.manifest.minDisplayVersion or nil
+end
+
 function API:GetCurrentSpecID()
     return ResolveSpecID()
 end
 
-function API:ReleaseActiveSpec(runGarbageCollection)
-    if not self.activeSpecID and not next(self.providers) and not next(self.specProviders) then
-        return false
+local function LoadContentAddon(addonName)
+    if type(addonName) ~= "string" or addonName == "" then
+        return false, "ADDON_NAME_MISSING"
     end
-    for classToken in pairs(self.providers) do
-        self.providers[classToken] = nil
-    end
-    for specID in pairs(self.specProviders) do
-        self.specProviders[specID] = nil
-    end
-    self.activeSpecID = nil
-
-    if runGarbageCollection and collectgarbage then
-        collectgarbage("collect")
-    end
-    return true
-end
-
-local function LoadSpecializationAddon(specID)
-    local addonName = "QFXTalentData_Spec_" .. tostring(specID)
     if C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded(addonName) then
         return true
     end
     if not C_AddOns or not C_AddOns.LoadAddOn then
         return false, "LOAD_API_UNAVAILABLE"
     end
-
     local ok, loaded, reason = pcall(C_AddOns.LoadAddOn, addonName)
     if not ok then
         return false, tostring(loaded)
@@ -125,58 +133,43 @@ local function LoadSpecializationAddon(specID)
     return false, reason or "LOAD_FAILED"
 end
 
-function API:ActivateSpec(specID, classToken)
+function API:EnsureContentModule(kind)
+    if self.contentModules[kind] then
+        return true
+    end
+    local addonName = self.manifest
+        and self.manifest.contentModules
+        and self.manifest.contentModules[kind]
+    local loaded, reason = LoadContentAddon(addonName)
+    if not loaded then
+        self.lastError = "CONTENT_" .. tostring(kind) .. "_" .. tostring(reason)
+        return false, self.lastError
+    end
+    if not self.contentModules[kind] then
+        self.lastError = "CONTENT_" .. tostring(kind) .. "_NOT_REGISTERED"
+        return false, self.lastError
+    end
+    self.lastError = nil
+    return true
+end
+
+function API:ActivateSpec(specID)
     specID = ResolveSpecID(specID)
     if not specID then
         return false, "SPEC_UNAVAILABLE"
     end
-    if self.activeSpecID == specID and self.specProviders[specID] then
-        return true
+    if type(self.schemas[specID]) ~= "string" then
+        return false, "SPEC_SCHEMA_MISSING"
     end
-
-    local loaders = _G.QFXTalentData_Loaders
-    local loader = type(loaders) == "table" and loaders[specID]
-    if type(loader) ~= "function" then
-        local loaded, loadReason = LoadSpecializationAddon(specID)
-        if not loaded then
-            return false, "SPEC_ADDON_" .. tostring(loadReason)
-        end
-        loaders = _G.QFXTalentData_Loaders
-        loader = type(loaders) == "table" and loaders[specID]
-    end
-
-    -- Backward compatibility with the older one-file-per-class data package.
-    if type(loader) ~= "function" then
-        classToken = classToken or CurrentClassToken()
-        loader = type(loaders) == "table" and classToken and loaders[classToken]
-    end
-    if type(loader) ~= "function" then
-        return false, "SPEC_LOADER_MISSING"
-    end
-
-    local ok, provider = pcall(loader)
-    if not ok then
-        return false, tostring(provider)
-    end
-    if type(provider) ~= "table" or type(provider.specs) ~= "table" or not provider.specs[specID] then
-        return false, "SPEC_DATA_MISSING"
-    end
-
-    -- A legacy class loader may return several specs. Retain only the active one.
-    provider.specs = {
-        [specID] = provider.specs[specID],
+    self.activeSpecID = specID
+    self.activeSpecData = {
+        name = self.manifest
+            and self.manifest.specNames
+            and self.manifest.specNames[specID]
+            or tostring(specID),
     }
-    CompactProvider(provider)
-
-    self:ReleaseActiveSpec(false)
-    local registered, reason = self:RegisterDataProvider(provider)
-    if not registered then
-        return false, reason
-    end
-    if collectgarbage then
-        collectgarbage("collect")
-    end
-    _G.QFXTalentDataLoadError = nil
+    ClearCurrentRecord(self)
+    self.lastError = nil
     return true
 end
 
@@ -184,40 +177,160 @@ function API:ActivateCurrentSpec()
     return self:ActivateSpec()
 end
 
-function API:ActivateClass(classToken)
-    return self:ActivateSpec(nil, classToken)
+function API:ActivateClass()
+    return self:ActivateSpec()
 end
 
 function API:ActivateCurrentClass()
-    return self:ActivateSpec(nil, CurrentClassToken())
+    return self:ActivateSpec()
+end
+
+function API:ReleaseActiveSpec(runGarbageCollection)
+    local hadData = self.activeSpecID ~= nil or self.currentRecord ~= nil
+    self.activeSpecID = nil
+    self.activeSpecData = nil
+    ClearCurrentRecord(self)
+    if runGarbageCollection and collectgarbage then
+        collectgarbage("step", 64)
+    end
+    return hadData
 end
 
 function API:GetSpecData(specID)
     specID = ResolveSpecID(specID)
-    local provider = specID and self.specProviders[specID]
-    return provider and provider.specs[specID] or nil
+    if not specID or type(self.schemas[specID]) ~= "string" then
+        return nil
+    end
+    if self.activeSpecID ~= specID or not self.activeSpecData then
+        local activated = self:ActivateSpec(specID)
+        if not activated then
+            return nil
+        end
+    end
+    return self.activeSpecData
+end
+
+local function FindRecord(self, kind, specID, key1, key2)
+    if not self:EnsureContentModule(kind) then
+        return nil
+    end
+    local module = self.contentModules[kind]
+    local records = module.records[specID]
+    if type(records) ~= "table" then
+        return nil
+    end
+    local stride = module.stride
+    if kind == MODULE_MYTHIC_PLUS then
+        for index = 1, #records, stride do
+            if records[index] == key1 then
+                return module, records, index
+            end
+        end
+    else
+        for index = 1, #records, stride do
+            if records[index] == key1 and records[index + 1] == key2 then
+                return module, records, index
+            end
+        end
+    end
+    return nil
+end
+
+local function BuildRecord(self, kind, specID, key1, key2)
+    if self.currentRecord
+        and self.currentRecordKind == kind
+        and self.currentRecordSpecID == specID
+        and self.currentRecordKey1 == key1
+        and self.currentRecordKey2 == key2
+    then
+        return self.currentRecord
+    end
+
+    local module, records, index = FindRecord(self, kind, specID, key1, key2)
+    if not module then
+        return nil
+    end
+    local statsOffset
+    local statsLength
+    local sampleCount
+    if kind == MODULE_MYTHIC_PLUS then
+        statsOffset = records[index + 1]
+        statsLength = records[index + 2]
+        sampleCount = records[index + 5]
+    else
+        statsOffset = records[index + 2]
+        statsLength = records[index + 3]
+        sampleCount = records[index + 6]
+    end
+    local record = {
+        apiVersion = 2,
+        formatVersion = 2,
+        dataVersion = module.dataVersion,
+        sampleCount = sampleCount,
+        sourceRankLimit = 10,
+        schema = self.schemas[specID],
+        selection = module.statsBlob:sub(
+            statsOffset,
+            statsOffset + statsLength - 1
+        ),
+    }
+    self.currentRecord = record
+    self.currentRecordKind = kind
+    self.currentRecordSpecID = specID
+    self.currentRecordKey1 = key1
+    self.currentRecordKey2 = key2
+    return record
+end
+
+local function GetRecommended(self, kind, specID, key1, key2)
+    local module, records, index = FindRecord(self, kind, specID, key1, key2)
+    if not module then
+        return nil
+    end
+    local offset
+    local length
+    if kind == MODULE_MYTHIC_PLUS then
+        offset = records[index + 3]
+        length = records[index + 4]
+    else
+        offset = records[index + 4]
+        length = records[index + 5]
+    end
+    return module.recommendationBlob:sub(offset, offset + length - 1)
 end
 
 function API:GetDungeonData(dungeonID, specID)
-    local specData = self:GetSpecData(specID)
-    return specData and specData.dungeons and specData.dungeons[dungeonID] or nil
+    specID = ResolveSpecID(specID)
+    if not specID or not dungeonID then
+        return nil
+    end
+    return BuildRecord(self, MODULE_MYTHIC_PLUS, specID, dungeonID, nil)
 end
 
 function API:GetRaidData(raidID, bossID, difficultyID, specID)
-    local specData = self:GetSpecData(specID)
-    local raidData = specData and specData.raids and specData.raids[raidID]
-    local bossData = raidData and raidData.bosses and raidData.bosses[bossID]
-    return bossData and bossData.difficulties and bossData.difficulties[difficultyID] or nil
+    specID = ResolveSpecID(specID)
+    local kind = RaidModuleKind(difficultyID)
+    if not specID or not kind or not raidID or not bossID then
+        return nil
+    end
+    return BuildRecord(self, kind, specID, raidID, bossID)
 end
 
 function API:GetRecommendedDungeonTalent(dungeonID, specID)
-    local value = self:GetDungeonData(dungeonID, specID)
-    return value and value.recommended or nil, value
+    specID = ResolveSpecID(specID)
+    if not specID or not dungeonID then
+        return nil
+    end
+    return GetRecommended(self, MODULE_MYTHIC_PLUS, specID, dungeonID, nil)
 end
 
 function API:GetRecommendedRaidTalent(raidID, bossID, difficultyID, specID)
-    local value = self:GetRaidData(raidID, bossID, difficultyID, specID)
-    return value and value.recommended or nil, value
+    specID = ResolveSpecID(specID)
+    local kind = RaidModuleKind(difficultyID)
+    if not specID or not kind or not raidID or not bossID then
+        return nil
+    end
+    return GetRecommended(self, kind, specID, raidID, bossID)
 end
 
 function API:GetDungeonSelectionRates(dungeonID, specID)
@@ -230,12 +343,9 @@ function API:GetRaidSelectionRates(raidID, bossID, difficultyID, specID)
     return value and value.selection or nil
 end
 
-function API:GetAvailableRaidDifficulties(raidID, bossID, specID)
-    local specData = self:GetSpecData(specID)
-    local raidData = specData and specData.raids and specData.raids[raidID]
-    local bossData = raidData and raidData.bosses and raidData.bosses[bossID]
+function API:GetAvailableRaidDifficulties()
     local difficulties = {}
-    for difficultyID in pairs(bossData and bossData.difficulties or {}) do
+    for difficultyID in pairs(self.manifest and self.manifest.raidDifficulties or {}) do
         difficulties[#difficulties + 1] = difficultyID
     end
     table.sort(difficulties)

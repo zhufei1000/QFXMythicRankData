@@ -1,11 +1,13 @@
 # QFXTalentData
 
-Unified global Mythic+ and Heroic/Mythic raid talent data.
+Low-allocation V2 talent data split into three load-on-demand modules.
 
-Version: `2026.07.30.0655.58`
+Version: `2026.07.30.1340.11`
+
+Minimum display addon version: `0.5.0`
 
 Mythic+ combinations: `320`
 
-Raid combinations currently available: `800`
+Heroic raid combinations: `400`
 
-Missing early-season raid combinations are omitted until valid public data exists.
+Mythic raid combinations: `400`

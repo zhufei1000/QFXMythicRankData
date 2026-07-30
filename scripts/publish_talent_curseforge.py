@@ -13,7 +13,13 @@ import publish_curseforge as publisher
 
 
 ADDON = "QFXTalentData"
+CONTENT_ADDONS = {
+    "QFXTalentData_MythicPlus": "mythicplus",
+    "QFXTalentData_RaidHeroic": "raidHeroic",
+    "QFXTalentData_RaidMythic": "raidMythic",
+}
 PROJECT_ID = 1627870
+MIN_DISPLAY_VERSION = "0.5.0"
 VERSION_RE = re.compile(r"[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{4}\.[0-9]{2}")
 EXPECTED_MEMBERS = {
     f"{ADDON}/Bootstrap.lua",
@@ -21,7 +27,12 @@ EXPECTED_MEMBERS = {
     f"{ADDON}/Core.lua",
     f"{ADDON}/QFXTalentData.toc",
     f"{ADDON}/README.md",
-    f"{ADDON}/SpecLoaders.lua",
+    f"{ADDON}/Schemas.lua",
+    *{
+        f"{addon}/{filename}"
+        for addon in CONTENT_ADDONS
+        for filename in ("Data.lua", f"{addon}.toc")
+    },
 }
 
 
@@ -49,7 +60,7 @@ def validate_artifact(zip_path: pathlib.Path) -> publisher.Package:
                 publisher._validate_zip_member(info, ADDON)
             if set(names) != EXPECTED_MEMBERS or len(names) != len(EXPECTED_MEMBERS):
                 raise publisher.PublishError(
-                    "QFXTalentData: ZIP must contain exactly the six addon files"
+                    "QFXTalentData: ZIP must contain exactly the four addon directories"
                 )
             if sum(info.file_size for info in infos) > publisher.MAX_UNCOMPRESSED_BYTES:
                 raise publisher.PublishError(
@@ -60,6 +71,10 @@ def validate_artifact(zip_path: pathlib.Path) -> publisher.Package:
             toc_text = archive.read(
                 f"{ADDON}/QFXTalentData.toc"
             ).decode("utf-8-sig")
+            content_tocs = {
+                addon: archive.read(f"{addon}/{addon}.toc").decode("utf-8-sig")
+                for addon in CONTENT_ADDONS
+            }
     except (OSError, zipfile.BadZipFile, UnicodeDecodeError) as exc:
         raise publisher.PublishError("QFXTalentData: invalid ZIP package") from exc
 
@@ -85,6 +100,59 @@ def validate_artifact(zip_path: pathlib.Path) -> publisher.Package:
         raise publisher.PublishError(
             "QFXTalentData: data version does not match TOC version"
         )
+    if publisher._one_metadata_value(
+        toc_text, "X-QFX-Data-API", ADDON
+    ) != "2":
+        raise publisher.PublishError("QFXTalentData: expected V2 data API")
+    if publisher._one_metadata_value(
+        toc_text, "X-QFX-Min-Display-Version", ADDON
+    ) != MIN_DISPLAY_VERSION:
+        raise publisher.PublishError(
+            "QFXTalentData: incompatible minimum display addon version"
+        )
+
+    for addon, kind in CONTENT_ADDONS.items():
+        child_toc = content_tocs[addon]
+        if publisher._one_metadata_value(
+            child_toc, "Version", addon
+        ) != toc_version:
+            raise publisher.PublishError(
+                f"{addon}: TOC version does not match base addon"
+            )
+        if publisher._one_metadata_value(
+            child_toc, "X-QFX-Data-Version", addon
+        ) != data_version:
+            raise publisher.PublishError(
+                f"{addon}: data version does not match base addon"
+            )
+        if publisher._one_metadata_value(
+            child_toc, "X-Curse-Project-ID", addon
+        ) != str(PROJECT_ID):
+            raise publisher.PublishError(
+                f"{addon}: CurseForge project ID does not match configuration"
+            )
+        if publisher._one_metadata_value(
+            child_toc, "X-QFX-Data-API", addon
+        ) != "2":
+            raise publisher.PublishError(f"{addon}: expected V2 data API")
+        if publisher._one_metadata_value(
+            child_toc, "X-QFX-Min-Display-Version", addon
+        ) != MIN_DISPLAY_VERSION:
+            raise publisher.PublishError(
+                f"{addon}: incompatible minimum display addon version"
+            )
+        if publisher._one_metadata_value(
+            child_toc, "X-QFX-Content-Kind", addon
+        ) != kind:
+            raise publisher.PublishError(f"{addon}: content kind mismatch")
+        if publisher._one_metadata_value(
+            child_toc, "Dependencies", addon
+        ) != ADDON:
+            raise publisher.PublishError(f"{addon}: base dependency mismatch")
+        if publisher._one_metadata_value(
+            child_toc, "LoadOnDemand", addon
+        ) != "1":
+            raise publisher.PublishError(f"{addon}: must be LoadOnDemand")
 
     interface_values = tuple(
         part.strip()
@@ -117,6 +185,7 @@ def build_changelog(package: publisher.Package) -> str:
     return (
         "QFX Talent Data update.\n\n"
         f"Version: {package.version}\n\n"
+        f"Requires QFX Talent Recommendations {MIN_DISPLAY_VERSION} or newer.\n\n"
         "Global Mythic+ and Heroic/Mythic raid talent database.\n\n"
         "Sources: Raider.IO and Warcraft Logs.\n"
     )

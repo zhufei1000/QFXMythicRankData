@@ -1,0 +1,17 @@
+## Interface: 120007
+## Version: 2026.07.30.1340.11
+## Title: |cff00ccffQFX Talent Data - Mythic Raid|r
+## Notes: Load-on-demand compact QFX talent recommendation data.
+## Notes-zhCN: 按需加载的QFX紧凑天赋推荐数据。
+## Notes-zhTW: 按需載入的QFX緊湊天賦推薦資料。
+## Author: QFX
+## Dependencies: QFXTalentData
+## LoadOnDemand: 1
+## X-Category: Data
+## X-Curse-Project-ID: 1627870
+## X-QFX-Data-API: 2
+## X-QFX-Data-Version: 2026.07.30.1340.11
+## X-QFX-Min-Display-Version: 0.5.0
+## X-QFX-Content-Kind: raidMythic
+
+Data.lua

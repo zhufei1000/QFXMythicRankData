@@ -92,8 +92,9 @@ The same repository also generates one independent `QFXTalentData` addon for tal
 - If a ranking row has no valid import string, collection continues farther down the ranking until ten valid samples are found or the public ranking data ends.
 - During an early tier, a boss/spec/difficulty combination with no valid public data is omitted instead of failing the whole database update. It appears automatically in a later update when data becomes available.
 - Every recommendation is one of the collected valid Blizzard import strings.
-- The generated Lua data keeps the real import-string samples but omits duplicated precomputed selection tables; display addons derive node percentages only for the selected content.
-- One compact `SpecLoaders.lua` file registers all specialization loaders, and only the current specialization is expanded into runtime tables.
+- Every content/spec combination stores one recommended Blizzard import string plus compact precomputed node statistics; the other sample strings are not shipped.
+- The base `QFXTalentData` addon stores only the API, manifest, and specialization schemas. Mythic+, Heroic raid, and Mythic raid data are separate load-on-demand addons, so only the selected content type enters memory.
+- Data API V2 packages declare `QFX Talent Recommendations 0.5.0` as the minimum compatible display addon version.
 
 The public API is `_G.QFXTalentData`. Important methods include:
 
@@ -141,6 +142,6 @@ The talent pipeline uses `RAIDERIO_ACCESS_KEY` when available and requires `WCL_
 
 The `Update Regional Mythic Rank Data` workflow runs twice daily at 09:17 and 21:17 China Standard Time and can be started manually. A normal same-season update makes about seven Raider.IO requests: one `static-data`, one shared `score-tiers`, and five regional `season-cutoffs` requests.
 
-The `Update QFX Talent Data` workflow runs twice daily. It collects global Mythic+ samples plus Heroic and Mythic raid samples, generates one `QFXTalentData` package, validates every Lua file with Lua 5.1, and publishes changed data to CurseForge project `1627870` before committing it to `main`. A failed upload leaves `main` unchanged so the next scheduled run can retry safely.
+The `Update QFX Talent Data` workflow runs twice daily. It requires all Raider.IO, Warcraft Logs, and CurseForge credentials before collection begins; a missing credential stops the run instead of publishing an incomplete database. It collects global Mythic+ samples plus Heroic and Mythic raid samples, generates the base addon and three load-on-demand content addons in one installable archive, validates every Lua file with Lua 5.1, verifies display-version compatibility, and publishes changed data to CurseForge project `1627870` before committing it to `main`. A failed upload leaves `main` unchanged so the next scheduled run can retry safely.
 
 Only regional rank packages with publishable changes are built and passed to their validated CurseForge publishing step. The separate read-only `Validate Pull Request` workflow runs tests, Lua 5.1 validation, and regional package builds without contacting Raider.IO, Warcraft Logs, or CurseForge.
