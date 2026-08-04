@@ -1,5 +1,5 @@
 ## Interface: 120007
-## Version: 2026.08.03.1823.06
+## Version: 2026.08.04.0653.32
 ## Title: |cff00ccffQFX Talent Data - Mythic+|r
 ## Notes: Load-on-demand compact QFX talent recommendation data.
 ## Notes-zhCN: 按需加载的QFX紧凑天赋推荐数据。
@@ -10,7 +10,7 @@
 ## X-Category: Data
 ## X-Curse-Project-ID: 1627870
 ## X-QFX-Data-API: 2
-## X-QFX-Data-Version: 2026.08.03.1823.06
+## X-QFX-Data-Version: 2026.08.04.0653.32
 ## X-QFX-Min-Display-Version: 0.5.0
 ## X-QFX-Content-Kind: mythicplus
 
