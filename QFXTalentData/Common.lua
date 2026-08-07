@@ -2,9 +2,9 @@ local API=_G.QFXTalentData
 if not API then return end
 local manifest={
   apiVersion=2,
-  dataVersion="2026.08.06.0658.06",
+  dataVersion="2026.08.07.0603.18",
   minDisplayVersion="0.5.0",
-  generatedAt="2026-08-06T06:58:06.231932+00:00",
+  generatedAt="2026-08-07T06:03:18.412844+00:00",
   seasonName="MN Season 1 • Full",
   seasonSlug="season-mn-1",
   source="Raider.IO global Mythic+ rankings and Warcraft Logs global raid rankings",
