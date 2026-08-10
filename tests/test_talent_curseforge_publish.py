@@ -28,7 +28,7 @@ def write_package(
 ) -> pathlib.Path:
     path = directory / f"QFXTalentData-{VERSION}.zip"
     base_toc = (
-        "## Interface: 120007\n"
+        "## Interface: 120007, 120100\n"
         f"## Version: {VERSION}\n"
         f"## X-Curse-Project-ID: {project_id}\n"
         "## X-QFX-Data-API: 2\n"
@@ -46,7 +46,7 @@ def write_package(
     for addon, kind in talent.CONTENT_ADDONS.items():
         members[f"{addon}/Data.lua"] = "return\n"
         members[f"{addon}/{addon}.toc"] = (
-            "## Interface: 120007\n"
+            "## Interface: 120007, 120100\n"
             f"## Version: {VERSION}\n"
             "## Dependencies: QFXTalentData\n"
             "## LoadOnDemand: 1\n"
@@ -69,9 +69,12 @@ def test_project_id_is_embedded_in_source_and_generated_toc() -> None:
     )
     marker = "## X-Curse-Project-ID: 1627870"
     compatibility = "## X-QFX-Min-Display-Version: 0.5.0"
+    interface = "## Interface: 120007, 120100"
     assert talent.PROJECT_ID == 1627870
     assert marker in builder
     assert marker in toc
+    assert interface in builder
+    assert interface in toc
     assert 'MIN_DISPLAY_VERSION = "0.5.0"' in builder
     assert "## X-QFX-Min-Display-Version: {MIN_DISPLAY_VERSION}" in builder
     assert compatibility in toc
@@ -86,6 +89,7 @@ def test_all_content_addons_are_load_on_demand() -> None:
         assert "## LoadOnDemand: 1" in toc
         assert "## X-Curse-Project-ID: 1627870" in toc
         assert "## X-QFX-Min-Display-Version: 0.5.0" in toc
+        assert "## Interface: 120007, 120100" in toc
 
 
 def test_validates_exact_talent_package(tmp_path: pathlib.Path) -> None:
@@ -93,7 +97,7 @@ def test_validates_exact_talent_package(tmp_path: pathlib.Path) -> None:
     assert package.addon == "QFXTalentData"
     assert package.project_id == 1627870
     assert package.version == VERSION
-    assert package.interface_versions == ("12.0.7",)
+    assert package.interface_versions == ("12.0.7", "12.1.0")
 
 
 def test_rejects_wrong_project_id(tmp_path: pathlib.Path) -> None:

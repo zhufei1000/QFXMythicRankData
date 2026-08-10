@@ -361,7 +361,7 @@ def module_file(
 
 
 def base_toc(version: str) -> str:
-    return f"""## Interface: 120007
+    return f"""## Interface: 120007, 120100
 ## Version: {version}
 ## Title: |cff00ccffQFX Talent Data|r
 ## Notes: Core API and manifests for QFX talent recommendations.
@@ -387,7 +387,7 @@ def module_toc(kind: str, version: str) -> str:
         "raidHeroic": "Heroic Raid",
         "raidMythic": "Mythic Raid",
     }
-    return f"""## Interface: 120007
+    return f"""## Interface: 120007, 120100
 ## Version: {version}
 ## Title: |cff00ccffQFX Talent Data - {titles[kind]}|r
 ## Notes: Load-on-demand compact QFX talent recommendation data.
