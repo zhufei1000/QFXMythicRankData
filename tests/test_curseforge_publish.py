@@ -22,7 +22,7 @@ from region_config import REGIONS
 def _toc(region_key: str, **changes: str) -> str:
     config = REGIONS[region_key]
     values = {
-        "interface": "120000, 120001, 120005, 120007",
+        "interface": "120000, 120001, 120005, 120007, 120100",
         "version": publish.VERSION,
         "project_id": str(config["curseforge_project_id"]),
         "region": config["region_upper"],
@@ -104,6 +104,7 @@ def _game_versions_body() -> bytes:
             {"id": 120001, "gameVersionTypeID": 777, "name": "12.0.1", "slug": "12-0-1"},
             {"id": 120005, "gameVersionTypeID": 777, "name": "12.0.5", "slug": "12-0-5"},
             {"id": 120007, "gameVersionTypeID": 777, "name": "12.0.7", "slug": "12-0-7"},
+            {"id": 120100, "gameVersionTypeID": 777, "name": "12.1.0", "slug": "12-1-0"},
         ]
     ).encode()
 
@@ -387,7 +388,7 @@ def test_game_versions_are_exactly_resolved_from_toc_interfaces(tmp_path: pathli
         return publish.HttpResult(200, _game_versions_body())
 
     ids, retries = publish.resolve_game_version_ids(packages, "secret", request, lambda _: None)
-    assert ids == [120000, 120001, 120005, 120007]
+    assert ids == [120000, 120001, 120005, 120007, 120100]
     assert retries == 0
     assert calls == [publish.GAME_VERSIONS_URL]
 

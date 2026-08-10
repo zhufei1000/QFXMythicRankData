@@ -53,6 +53,14 @@ def test_toc_has_exactly_one_matching_curseforge_project_id(region: str) -> None
             assert f"## X-Curse-Project-ID: {other_id}" not in text
 
 
+@pytest.mark.parametrize("region", REGIONS)
+def test_toc_includes_wow_12_1_compatibility(region: str) -> None:
+    addon = REGIONS[region]["addon"]
+    toc = ROOT / addon / f"{addon}.toc"
+    text = toc.read_text(encoding="utf-8")
+    assert "## Interface: 120000, 120001, 120005, 120007, 120100" in text
+
+
 def test_all_packages_have_one_correct_top_level_directory(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -76,6 +84,7 @@ def test_all_packages_have_one_correct_top_level_directory(
             toc_text = bundle.read(f"{addon}/{addon}.toc").decode("utf-8")
             assert toc_text.count("## X-Curse-Project-ID:") == 1
             assert f"## X-Curse-Project-ID: {project_id}" in toc_text
+            assert "120100" in toc_text
 
     serialized = json.dumps({"packages": packages})
     for project_id in EXPECTED_PROJECT_IDS.values():

@@ -273,7 +273,7 @@ def spec_loaders_file(data: dict[str, Any]) -> str:
 
 
 def toc(data):
-    return f'''## Interface: 120007
+    return f'''## Interface: 120007, 120100
 ## Version: {data['version']}
 ## Title: |cff00ccffQFX Talent Data|r
 ## Notes: Global Mythic+ and Heroic/Mythic raid talent samples, selection rates, and recommendations.
