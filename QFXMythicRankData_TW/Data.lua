@@ -10,14 +10,14 @@ end
 
 API:RegisterRegion("tw", {
     schemaVersion = 2,
-    dataVersion = "202608131400",
+    dataVersion = "202608140300",
     region = "tw",
     available = true,
     status = "ready",
     seasonState = "active",
     season = "season-mn-1",
     population = 46276,
-    updatedAt = "Thu Aug 13 2026 14:00:33 GMT+0000 (Coordinated Universal Time)",
+    updatedAt = "Fri Aug 14 2026 03:00:36 GMT+0000 (Coordinated Universal Time)",
     source = "Raider.IO",
     sourceURL = "https://raider.io",
     cutoffs = {
@@ -38,13 +38,13 @@ API:RegisterRegion("tw", {
             horde = {
                 score = 4135.52,
                 rank = 22,
-                population = 21844,
+                population = 21843,
                 percentile = 0.1007,
             },
             alliance = {
                 score = 4291.51,
                 rank = 25,
-                population = 24432,
+                population = 24433,
                 percentile = 0.1023,
             },
         },
@@ -63,16 +63,16 @@ API:RegisterRegion("tw", {
                 percentile = 1.0005,
             },
             horde = {
-                score = 3923.12,
+                score = 3919.04,
                 rank = 219,
-                population = 21844,
+                population = 21843,
                 percentile = 1.0026,
             },
             alliance = {
                 score = 4087.16,
                 rank = 245,
-                population = 24432,
-                percentile = 1.0028,
+                population = 24433,
+                percentile = 1.0027,
             },
         },
         p900 = {
@@ -90,16 +90,16 @@ API:RegisterRegion("tw", {
                 percentile = 10.0009,
             },
             horde = {
-                score = 3456.33,
+                score = 3456.27,
                 rank = 2185,
-                population = 21844,
-                percentile = 10.0027,
+                population = 21843,
+                percentile = 10.0032,
             },
             alliance = {
-                score = 3525.09,
-                rank = 2445,
-                population = 24432,
-                percentile = 10.0074,
+                score = 3525.28,
+                rank = 2444,
+                population = 24433,
+                percentile = 10.0029,
             },
         },
         p750 = {
@@ -117,16 +117,16 @@ API:RegisterRegion("tw", {
                 percentile = 25,
             },
             horde = {
-                score = 3196.82,
+                score = 3196.76,
                 rank = 5461,
-                population = 21844,
-                percentile = 25,
+                population = 21843,
+                percentile = 25.0011,
             },
             alliance = {
-                score = 3240.39,
-                rank = 6108,
-                population = 24432,
-                percentile = 25,
+                score = 3240.42,
+                rank = 6109,
+                population = 24433,
+                percentile = 25.0031,
             },
         },
         p600 = {
@@ -144,23 +144,23 @@ API:RegisterRegion("tw", {
                 percentile = 40.0013,
             },
             horde = {
-                score = 3013.54,
+                score = 3013.53,
                 rank = 8738,
-                population = 21844,
-                percentile = 40.0018,
+                population = 21843,
+                percentile = 40.0037,
             },
             alliance = {
                 score = 3030.98,
-                rank = 9773,
-                population = 24432,
-                percentile = 40.0008,
+                rank = 9774,
+                population = 24433,
+                percentile = 40.0033,
             },
         },
     },
     populationByFaction = {
         all = 46276,
-        horde = 21844,
-        alliance = 24432,
+        horde = 21843,
+        alliance = 24433,
     },
     seasonInfo = {
         slug = "season-mn-1",
@@ -254,16 +254,16 @@ API:RegisterRegion("tw", {
                 percentile = 43.0007,
             },
             horde = {
-                score = 2999.3,
+                score = 2999.21,
                 rank = 9131,
-                population = 21844,
-                percentile = 41.801,
+                population = 21843,
+                percentile = 41.8029,
             },
             alliance = {
-                score = 2999.38,
+                score = 2999.41,
                 rank = 10751,
-                population = 24432,
-                percentile = 44.0038,
+                population = 24433,
+                percentile = 44.002,
             },
         },
         keystoneHero = {
@@ -276,7 +276,7 @@ API:RegisterRegion("tw", {
                 alliance = "#51e05b",
             },
             all = {
-                score = 2495.4,
+                score = 2495.48,
                 rank = 30034,
                 population = 46276,
                 percentile = 64.9019,
@@ -284,14 +284,14 @@ API:RegisterRegion("tw", {
             horde = {
                 score = 2496.84,
                 rank = 14024,
-                population = 21844,
-                percentile = 64.2007,
+                population = 21843,
+                percentile = 64.2036,
             },
             alliance = {
                 score = 2495.48,
-                rank = 16003,
-                population = 24432,
-                percentile = 65.5002,
+                rank = 16004,
+                population = 24433,
+                percentile = 65.5016,
             },
         },
         keystoneMaster = {
@@ -304,22 +304,22 @@ API:RegisterRegion("tw", {
                 alliance = "#6dff51",
             },
             all = {
-                score = 1998.84,
+                score = 1999.1,
                 rank = 33551,
                 population = 46276,
                 percentile = 72.5019,
             },
             horde = {
-                score = 1999.1,
-                rank = 15728,
-                population = 21844,
-                percentile = 72.0015,
+                score = 1999.12,
+                rank = 15727,
+                population = 21843,
+                percentile = 72.0002,
             },
             alliance = {
                 score = 1996.3,
-                rank = 17836,
-                population = 24432,
-                percentile = 73.0026,
+                rank = 17837,
+                population = 24433,
+                percentile = 73.0037,
             },
         },
         keystoneConqueror = {
@@ -332,22 +332,22 @@ API:RegisterRegion("tw", {
                 alliance = "#a2ff87",
             },
             all = {
-                score = 1499.49,
+                score = 1499.78,
                 rank = 36096,
                 population = 46276,
                 percentile = 78.0016,
             },
             horde = {
-                score = 1498.1,
-                rank = 16995,
-                population = 21844,
-                percentile = 77.8017,
+                score = 1498.8,
+                rank = 16994,
+                population = 21843,
+                percentile = 77.8007,
             },
             alliance = {
                 score = 1499.55,
-                rank = 19106,
-                population = 24432,
-                percentile = 78.2007,
+                rank = 19107,
+                population = 24433,
+                percentile = 78.2016,
             },
         },
         keystoneExplorer = {
@@ -360,32 +360,27 @@ API:RegisterRegion("tw", {
                 alliance = "#caffb7",
             },
             all = {
-                score = 999.83,
+                score = 999.96,
                 rank = 38734,
                 population = 46276,
                 percentile = 83.7021,
             },
             horde = {
-                score = 996.29,
-                rank = 18262,
-                population = 21844,
-                percentile = 83.6019,
+                score = 996.41,
+                rank = 18261,
+                population = 21843,
+                percentile = 83.6012,
             },
             alliance = {
-                score = 998.57,
-                rank = 20499,
-                population = 24432,
-                percentile = 83.9023,
+                score = 998.52,
+                rank = 20500,
+                population = 24433,
+                percentile = 83.9029,
             },
         },
     },
     history = {
         p999 = {
-            {
-                timestampMs = 1784061869000,
-                score = 4180.81,
-                population = 43,
-            },
             {
                 timestampMs = 1784150433000,
                 score = 4180.81,
@@ -534,11 +529,6 @@ API:RegisterRegion("tw", {
         },
         p990 = {
             {
-                timestampMs = 1784061869000,
-                score = 3967.92,
-                population = 422,
-            },
-            {
                 timestampMs = 1784150433000,
                 score = 3970.95,
                 population = 424,
@@ -685,11 +675,6 @@ API:RegisterRegion("tw", {
             },
         },
         p900 = {
-            {
-                timestampMs = 1784061869000,
-                score = 3488.3,
-                population = 4215,
-            },
             {
                 timestampMs = 1784150433000,
                 score = 3489.42,
@@ -838,11 +823,6 @@ API:RegisterRegion("tw", {
         },
         p750 = {
             {
-                timestampMs = 1784061869000,
-                score = 3227.43,
-                population = 10537,
-            },
-            {
                 timestampMs = 1784150433000,
                 score = 3226.54,
                 population = 10577,
@@ -989,11 +969,6 @@ API:RegisterRegion("tw", {
             },
         },
         p600 = {
-            {
-                timestampMs = 1784061869000,
-                score = 3028.92,
-                population = 16859,
-            },
             {
                 timestampMs = 1784150433000,
                 score = 3028.41,
