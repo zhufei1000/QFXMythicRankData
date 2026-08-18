@@ -10,14 +10,14 @@ end
 
 API:RegisterRegion("kr", {
     schemaVersion = 2,
-    dataVersion = "202608171300",
+    dataVersion = "202608180100",
     region = "kr",
     available = true,
     status = "ready",
     seasonState = "active",
     season = "season-mn-1",
-    population = 121612,
-    updatedAt = "Mon Aug 17 2026 13:00:29 GMT+0000 (Coordinated Universal Time)",
+    population = 121609,
+    updatedAt = "Tue Aug 18 2026 01:00:28 GMT+0000 (Coordinated Universal Time)",
     source = "Raider.IO",
     sourceURL = "https://raider.io",
     cutoffs = {
@@ -32,13 +32,13 @@ API:RegisterRegion("kr", {
             all = {
                 score = 4258.45,
                 rank = 122,
-                population = 121612,
+                population = 121609,
                 percentile = 0.1003,
             },
             horde = {
                 score = 4131.25,
                 rank = 72,
-                population = 71424,
+                population = 71421,
                 percentile = 0.1008,
             },
             alliance = {
@@ -59,13 +59,13 @@ API:RegisterRegion("kr", {
             all = {
                 score = 4020.53,
                 rank = 1220,
-                population = 121612,
+                population = 121609,
                 percentile = 1.0032,
             },
             horde = {
-                score = 3858.85,
+                score = 3857.91,
                 rank = 715,
-                population = 71424,
+                population = 71421,
                 percentile = 1.0011,
             },
             alliance = {
@@ -84,22 +84,22 @@ API:RegisterRegion("kr", {
                 alliance = "#a335ee",
             },
             all = {
-                score = 3406.73,
-                rank = 12162,
-                population = 121612,
-                percentile = 10.0007,
+                score = 3406.74,
+                rank = 12161,
+                population = 121609,
+                percentile = 10.0001,
             },
             horde = {
-                score = 3362.69,
+                score = 3362.5,
                 rank = 7143,
-                population = 71424,
-                percentile = 10.0008,
+                population = 71421,
+                percentile = 10.0013,
             },
             alliance = {
-                score = 3438.16,
-                rank = 5021,
+                score = 3438.2,
+                rank = 5019,
                 population = 50188,
-                percentile = 10.0044,
+                percentile = 10.0004,
             },
         },
         p750 = {
@@ -113,20 +113,20 @@ API:RegisterRegion("kr", {
             all = {
                 score = 3054.78,
                 rank = 30403,
-                population = 121612,
-                percentile = 25,
+                population = 121609,
+                percentile = 25.0006,
             },
             horde = {
-                score = 3040.38,
-                rank = 17858,
-                population = 71424,
-                percentile = 25.0028,
+                score = 3040.33,
+                rank = 17856,
+                population = 71421,
+                percentile = 25.0011,
             },
             alliance = {
-                score = 3081,
-                rank = 12548,
+                score = 3081.07,
+                rank = 12547,
                 population = 50188,
-                percentile = 25.002,
+                percentile = 25,
             },
         },
         p600 = {
@@ -138,19 +138,19 @@ API:RegisterRegion("kr", {
                 alliance = "#4788c4",
             },
             all = {
-                score = 2898.82,
-                rank = 48645,
-                population = 121612,
-                percentile = 40.0002,
+                score = 2898.84,
+                rank = 48644,
+                population = 121609,
+                percentile = 40.0003,
             },
             horde = {
-                score = 2878.18,
-                rank = 28570,
-                population = 71424,
-                percentile = 40.0006,
+                score = 2878.11,
+                rank = 28569,
+                population = 71421,
+                percentile = 40.0008,
             },
             alliance = {
-                score = 2931.44,
+                score = 2931.59,
                 rank = 20076,
                 population = 50188,
                 percentile = 40.0016,
@@ -158,8 +158,8 @@ API:RegisterRegion("kr", {
         },
     },
     populationByFaction = {
-        all = 121612,
-        horde = 71424,
+        all = 121609,
+        horde = 71421,
         alliance = 50188,
     },
     seasonInfo = {
@@ -250,20 +250,20 @@ API:RegisterRegion("kr", {
             all = {
                 score = 2998.85,
                 rank = 40497,
-                population = 121612,
-                percentile = 33.3002,
+                population = 121609,
+                percentile = 33.301,
             },
             horde = {
-                score = 2999.83,
-                rank = 22642,
-                population = 71424,
+                score = 2999.73,
+                rank = 22641,
+                population = 71421,
                 percentile = 31.7008,
             },
             alliance = {
-                score = 2999.81,
-                rank = 17767,
+                score = 2999.86,
+                rank = 17769,
                 population = 50188,
-                percentile = 35.4009,
+                percentile = 35.4049,
             },
         },
         keystoneHero = {
@@ -276,22 +276,22 @@ API:RegisterRegion("kr", {
                 alliance = "#51e05b",
             },
             all = {
-                score = 2496.27,
-                rank = 75643,
-                population = 121612,
-                percentile = 62.2003,
+                score = 2496.39,
+                rank = 75641,
+                population = 121609,
+                percentile = 62.2002,
             },
             horde = {
-                score = 2496.33,
-                rank = 44141,
-                population = 71424,
-                percentile = 61.8014,
+                score = 2496.2,
+                rank = 44140,
+                population = 71421,
+                percentile = 61.8026,
             },
             alliance = {
-                score = 2499.12,
-                rank = 31468,
+                score = 2499.25,
+                rank = 31469,
                 population = 50188,
-                percentile = 62.7002,
+                percentile = 62.7022,
             },
         },
         keystoneMaster = {
@@ -304,22 +304,22 @@ API:RegisterRegion("kr", {
                 alliance = "#6dff51",
             },
             all = {
-                score = 1999.17,
-                rank = 86831,
-                population = 121612,
-                percentile = 71.4,
+                score = 1999.19,
+                rank = 86829,
+                population = 121609,
+                percentile = 71.4001,
             },
             horde = {
                 score = 1996.36,
-                rank = 50926,
-                population = 71424,
-                percentile = 71.301,
+                rank = 50924,
+                population = 71421,
+                percentile = 71.3012,
             },
             alliance = {
                 score = 1995.48,
-                rank = 35985,
+                rank = 35986,
                 population = 50188,
-                percentile = 71.7004,
+                percentile = 71.7024,
             },
         },
         keystoneConqueror = {
@@ -332,19 +332,19 @@ API:RegisterRegion("kr", {
                 alliance = "#a2ff87",
             },
             all = {
-                score = 1498.96,
-                rank = 94371,
-                population = 121612,
-                percentile = 77.6001,
+                score = 1499.08,
+                rank = 94369,
+                population = 121609,
+                percentile = 77.6003,
             },
             horde = {
                 score = 1499.67,
-                rank = 55354,
-                population = 71424,
-                percentile = 77.5006,
+                rank = 55352,
+                population = 71421,
+                percentile = 77.501,
             },
             alliance = {
-                score = 1493.04,
+                score = 1493.05,
                 rank = 39047,
                 population = 50188,
                 percentile = 77.8015,
@@ -360,19 +360,19 @@ API:RegisterRegion("kr", {
                 alliance = "#caffb7",
             },
             all = {
-                score = 998.6,
-                rank = 101790,
-                population = 121612,
-                percentile = 83.7006,
+                score = 998.67,
+                rank = 101787,
+                population = 121609,
+                percentile = 83.7002,
             },
             horde = {
                 score = 998.01,
-                rank = 59782,
-                population = 71424,
-                percentile = 83.7002,
+                rank = 59780,
+                population = 71421,
+                percentile = 83.7009,
             },
             alliance = {
-                score = 999.85,
+                score = 999.89,
                 rank = 42008,
                 population = 50188,
                 percentile = 83.7013,
@@ -381,11 +381,6 @@ API:RegisterRegion("kr", {
     },
     history = {
         p999 = {
-            {
-                timestampMs = 1784408546000,
-                score = 4159.9,
-                population = 115,
-            },
             {
                 timestampMs = 1784502042000,
                 score = 4167.93,
@@ -514,11 +509,6 @@ API:RegisterRegion("kr", {
         },
         p990 = {
             {
-                timestampMs = 1784408546000,
-                score = 3906.66,
-                population = 1122,
-            },
-            {
                 timestampMs = 1784502042000,
                 score = 3911.71,
                 population = 1127,
@@ -645,11 +635,6 @@ API:RegisterRegion("kr", {
             },
         },
         p900 = {
-            {
-                timestampMs = 1784408546000,
-                score = 3401.18,
-                population = 11219,
-            },
             {
                 timestampMs = 1784502042000,
                 score = 3401.52,
@@ -778,11 +763,6 @@ API:RegisterRegion("kr", {
         },
         p750 = {
             {
-                timestampMs = 1784408546000,
-                score = 3055.63,
-                population = 28046,
-            },
-            {
                 timestampMs = 1784502042000,
                 score = 3055.61,
                 population = 28175,
@@ -909,11 +889,6 @@ API:RegisterRegion("kr", {
             },
         },
         p600 = {
-            {
-                timestampMs = 1784408546000,
-                score = 2900.39,
-                population = 44872,
-            },
             {
                 timestampMs = 1784502042000,
                 score = 2900.34,
