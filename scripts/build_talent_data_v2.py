@@ -27,7 +27,7 @@ from talent_statistics import (
     pack_schema,
     pack_statistics_v2,
 )
-from wcl_talent_export import TalentExporter
+from wcl_talent_export import TalentExporter, TalentExportError
 
 
 API_VERSION = 2
@@ -108,6 +108,19 @@ def collect_records(
             continue
         if recommended not in loadouts:
             recommended = loadouts[0]
+        try:
+            statistics = analyze_statistics(
+                exporter,
+                spec_id,
+                loadouts,
+                recommended,
+            )
+        except TalentExportError as exc:
+            print(
+                f"skip mythicplus spec={spec_id} dungeon={dungeon_id}: {exc}",
+                file=sys.stderr,
+            )
+            continue
         records.append(Record(
             kind="mythicplus",
             spec_id=spec_id,
@@ -115,12 +128,7 @@ def collect_records(
             key2=None,
             recommended=recommended,
             sample_count=len(loadouts),
-            statistics=analyze_statistics(
-                exporter,
-                spec_id,
-                loadouts,
-                recommended,
-            ),
+            statistics=statistics,
         ))
         spec_names.setdefault(
             spec_id,
@@ -152,6 +160,19 @@ def collect_records(
                 continue
             if recommended not in loadouts:
                 recommended = loadouts[0]
+            try:
+                statistics = analyze_statistics(
+                    exporter,
+                    spec_id,
+                    loadouts,
+                    recommended,
+                )
+            except TalentExportError as exc:
+                print(
+                    f"skip raid spec={spec_id} raid={raid_id} boss={boss_id}: {exc}",
+                    file=sys.stderr,
+                )
+                continue
             records.append(Record(
                 kind=kind,
                 spec_id=spec_id,
@@ -159,12 +180,7 @@ def collect_records(
                 key2=boss_id,
                 recommended=recommended,
                 sample_count=len(loadouts),
-                statistics=analyze_statistics(
-                    exporter,
-                    spec_id,
-                    loadouts,
-                    recommended,
-                ),
+                statistics=statistics,
             ))
             spec_names.setdefault(
                 spec_id,
@@ -177,16 +193,34 @@ def build_schemas(records: list[Record]) -> dict[int, SpecSchema]:
     by_spec: dict[int, list[TalentStatistics]] = defaultdict(list)
     for record in records:
         by_spec[record.spec_id].append(record.statistics)
+    if not by_spec:
+        raise ValueError(
+            "no valid talent records at all; refusing to publish an empty database"
+        )
     missing = sorted(set(legacy.SPEC_CLASS) - set(by_spec))
     if missing:
-        raise ValueError(
-            "records are missing specialization schemas: "
+        print(
+            "warning: no talent records for specs "
             + ", ".join(map(str, missing))
+            + "; these specs will be absent from the database",
+            file=sys.stderr,
         )
-    return {
-        spec_id: build_spec_schema(values)
-        for spec_id, values in sorted(by_spec.items())
-    }
+    schemas: dict[int, SpecSchema] = {}
+    for spec_id, values in sorted(by_spec.items()):
+        try:
+            schemas[spec_id] = build_spec_schema(values)
+        except ValueError as exc:
+            print(
+                f"warning: spec {spec_id} has no usable talent nodes; "
+                f"skipping ({exc})",
+                file=sys.stderr,
+            )
+    if not schemas:
+        raise ValueError(
+            "no specialization schemas could be built; "
+            "refusing to publish an empty database"
+        )
+    return schemas
 
 
 def manifest_file(data: dict[str, Any]) -> str:
@@ -293,7 +327,11 @@ def module_file(
     statistics_offset = 1
     recommendation_offset = 1
     module_records = sorted(
-        (record for record in records if record.kind == kind),
+        (
+            record
+            for record in records
+            if record.kind == kind and record.spec_id in schemas
+        ),
         key=lambda record: (
             record.spec_id,
             record.key1,

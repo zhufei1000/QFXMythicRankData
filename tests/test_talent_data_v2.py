@@ -211,3 +211,18 @@ def test_flat_record_offsets_slice_one_opaque_recommendation():
         assert valid_samples == value.valid_samples
         assert counts == value.counts
         assert recommended == value.recommended
+
+
+def test_build_schemas_skips_specs_without_records():
+    only = statistics(100, 202)
+    schema = module.build_schemas([
+        module.Record("mythicplus", 70, 1, None, "OPAQUE", 10, only),
+    ])
+    assert set(schema) == {70}
+
+
+def test_build_schemas_refuses_fully_empty_database():
+    import pytest
+
+    with pytest.raises(ValueError, match="empty database"):
+        module.build_schemas([])
