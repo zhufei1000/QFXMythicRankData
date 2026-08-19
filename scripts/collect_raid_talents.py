@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import pathlib
 from collections import Counter, defaultdict
@@ -84,4 +85,28 @@ def enhanced(samples):
 
 
 base.recommendation = enhanced
-raise SystemExit(base.main())
+status = base.main()
+payload = json.loads(args.output.read_text(encoding="utf-8"))
+usable = sum(
+    1
+    for row in payload.get("recommendations") or []
+    if isinstance(row, dict)
+    and isinstance(row.get("recommended_loadout"), str)
+    and row["recommended_loadout"].strip()
+)
+if args.difficulty == 4 and usable <= 0:
+    raise RuntimeError(
+        f"WCL zone {args.zone} Heroic produced zero usable talent recommendations; "
+        "refusing to publish an empty/stale raid database"
+    )
+if usable <= 0:
+    print(
+        f"warning: WCL zone {args.zone} difficulty {args.difficulty} has no usable talent recommendations yet",
+        flush=True,
+    )
+else:
+    print(
+        f"validated WCL zone {args.zone} difficulty {args.difficulty}: {usable} usable recommendations",
+        flush=True,
+    )
+raise SystemExit(status)
