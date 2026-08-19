@@ -54,7 +54,14 @@ jobs:
       - name: Fetch and validate all regional cutoff data
         env:
           RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
-        run: python scripts/update_all_regions.py
+        run: |
+          # Regions are updated independently: failed regions leave their files
+          # unchanged (== HEAD) so they are excluded from change detection and
+          # publishing, while successful regions still get released. Do not
+          # fail the whole job when a subset of regions is temporarily broken
+          # (e.g. during season transitions).
+          python scripts/update_all_regions.py \
+            || echo "::warning::One or more regions failed to update; successful regions will still be published."
 
       - name: Detect publishable regional data changes
         id: changes
