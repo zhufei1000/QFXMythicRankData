@@ -174,7 +174,13 @@ def match_wcl_zones(
 ) -> list[dict[str, Any]]:
     selected: dict[int, dict[str, Any]] = {}
     for raid in raids:
-        zone, overlap = best_wcl_zone(raid, zones)
+        try:
+            zone, overlap = best_wcl_zone(raid, zones)
+        except RuntimeError as exc:
+            if "No unfrozen WCL zone matches" in str(exc):
+                print(f"warning: {exc}; skipping unranked active raid", file=sys.stderr)
+                continue
+            raise
         zone_id = int(zone["id"])
         target = selected.setdefault(
             zone_id,
@@ -190,6 +196,8 @@ def match_wcl_zones(
             str(raid.get("name") or raid.get("slug") or raid.get("id"))
         )
         target["matched_encounters"] += overlap
+    if not selected:
+        raise RuntimeError("No active Raider.IO raids have a matching current WCL zone")
     return sorted(selected.values(), key=lambda value: value["zone_id"])
 
 
@@ -280,7 +288,12 @@ def active_raid_catalog(
 ) -> dict[str, Any]:
     output: dict[str, Any] = {"raids": {}}
     for raid in raids:
-        zone, _overlap = best_wcl_zone(raid, zones)
+        try:
+            zone, _overlap = best_wcl_zone(raid, zones)
+        except RuntimeError as exc:
+            if "No unfrozen WCL zone matches" in str(exc):
+                continue
+            raise
         wcl_encounters = _zone_encounters(zone)
         raid_name = str(raid.get("name") or raid.get("slug") or raid.get("id"))
         raid_slug = str(raid.get("slug") or slugify(raid_name))
