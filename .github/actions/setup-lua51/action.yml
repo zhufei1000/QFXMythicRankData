@@ -1,0 +1,19 @@
+name: Setup Lua 5.1
+description: Build and install Lua 5.1 from source, avoiding GitHub runner apt sources (which can hang). Installs lua + luac into /usr/local/bin.
+runs:
+  using: composite
+  steps:
+    - name: Build Lua 5.1 from source
+      shell: bash
+      run: |
+        set -euo pipefail
+        TARBALL="$RUNNER_TEMP/lua-5.1.5.tar.gz"
+        curl -fsSL --retry 3 --retry-delay 2 \
+          https://www.lua.org/ftp/lua-5.1.5.tar.gz \
+          -o "$TARBALL"
+        tar -xzf "$TARBALL" -C "$RUNNER_TEMP"
+        make -C "$RUNNER_TEMP/lua-5.1.5" posix
+        sudo make -C "$RUNNER_TEMP/lua-5.1.5" install
+        command -v lua
+        command -v luac
+        lua -v

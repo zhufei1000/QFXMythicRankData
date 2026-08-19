@@ -65,11 +65,11 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install dependencies and Lua 5.1
-        run: |
-          python -m pip install --requirement requirements.txt
-          sudo apt-get update
-          sudo apt-get install --yes lua5.1
+      - name: Install Python dependencies
+        run: python -m pip install --requirement requirements.txt
+
+      - name: Install Lua 5.1
+        uses: ./.github/actions/setup-lua51
 
       - name: Compile collectors and builder
         run: |
@@ -204,7 +204,7 @@ jobs:
             QFXTalentData_MythicPlus \
             QFXTalentData_RaidHeroic \
             QFXTalentData_RaidMythic \
-            -name '*.lua' -print0 | xargs -0 -n1 luac5.1 -p
+            -name '*.lua' -print0 | xargs -0 -n1 luac -p
           unzip -t "${{ steps.package.outputs.path }}"
           test -f QFXTalentData/Schemas.lua
           test ! -f QFXTalentData/SpecLoaders.lua
