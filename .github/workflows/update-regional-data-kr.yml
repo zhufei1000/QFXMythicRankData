@@ -2,10 +2,10 @@ name: Update KR Regional Data
 
 on:
   schedule:
-    # KR 16:00 KST = 07:00 UTC (afternoon snapshot, covers daytime play)
-    - cron: "0 7 * * *"
-    # KR 04:00 KST = 19:00 UTC (overnight snapshot, covers evening play)
-    - cron: "0 19 * * *"
+    # KR 18:00 KST = 09:00 UTC (final daytime snapshot, ~2h after the 16:00 boundary)
+    - cron: "0 9 * * *"
+    # KR 06:00 KST = 21:00 UTC (final overnight snapshot, ~2h after the 04:00 boundary)
+    - cron: "0 21 * * *"
   workflow_dispatch:
     inputs:
       force_publish:

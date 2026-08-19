@@ -2,10 +2,10 @@ name: Update CN Regional Data
 
 on:
   schedule:
-    # CN 16:00 CST = 08:00 UTC (afternoon snapshot, covers daytime play)
-    - cron: "0 8 * * *"
-    # CN 04:00 CST = 20:00 UTC (overnight snapshot, covers evening play)
-    - cron: "0 20 * * *"
+    # CN 18:00 CST = 10:00 UTC (final daytime snapshot, ~2h after the 16:00 boundary)
+    - cron: "0 10 * * *"
+    # CN 06:00 CST = 22:00 UTC (final overnight snapshot, ~2h after the 04:00 boundary)
+    - cron: "0 22 * * *"
   workflow_dispatch:
     inputs:
       force_publish:
