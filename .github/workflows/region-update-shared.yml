@@ -1,25 +1,30 @@
-name: Update Regional Mythic Rank Data (manual full run)
+name: Update Single Regional Data (shared)
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      force_publish:
-        description: "Publish selected packages even when regional data is unchanged"
-        required: true
-        type: boolean
-        default: false
-      regions:
-        description: "Regions to force publish: all or comma-separated CN,US,EU,TW,KR"
+      region:
         required: true
         type: string
-        default: "all"
+        description: "Region to update: CN, US, EU, TW, KR"
+      force_publish:
+        required: false
+        type: boolean
+        default: false
+        description: "Publish selected packages even when regional data is unchanged"
+    secrets:
+      RAIDERIO_ACCESS_KEY:
+        required: true
+      CF_API_TOKEN:
+        required: true
 
 permissions:
   contents: write
 
-# Share the group with the manual publisher so two CurseForge uploads cannot overlap.
+# A single region runs alone: parallel regional updates can safely overlap,
+# and retries are handled inside the commit/push step via rebase loops.
 concurrency:
-  group: curseforge-regional-publish
+  group: regional-publish-${{ inputs.region }}
   cancel-in-progress: false
 
 jobs:
@@ -46,35 +51,35 @@ jobs:
       - name: Verify shared Core.lua synchronization
         run: python scripts/sync_core.py --check
 
-      - name: Fetch and validate all regional cutoff data
+      - name: Fetch and validate ${{ inputs.region }} regional data
+        id: fetch
         env:
           RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
+          REGION: ${{ inputs.region }}
         run: |
-          # Regions are updated independently: failed regions leave their files
-          # unchanged (== HEAD) so they are excluded from change detection and
-          # publishing, while successful regions still get released. Do not
-          # fail the whole job when a subset of regions is temporarily broken
-          # (e.g. during season transitions).
-          python scripts/update_all_regions.py \
-            || echo "::warning::One or more regions failed to update; successful regions will still be published."
+          set -euo pipefail
+          python scripts/update_region_data.py \
+            --region "$(echo "${REGION}" | tr '[:upper:]' '[:lower:]')"
 
-      - name: Detect publishable regional data changes
+      - name: Detect publishable ${{ inputs.region }} data changes
         id: changes
         shell: bash
+        env:
+          REGION: ${{ inputs.region }}
         run: |
           set -euo pipefail
           python scripts/detect_regional_data_changes.py \
             --base-ref HEAD \
+            --regions "${REGION}" \
             --github-output "${GITHUB_OUTPUT}"
 
-      - name: Resolve regional publishing scope
+      - name: Resolve publishing scope
         id: publish_scope
         shell: bash
         env:
           DATA_CHANGED: ${{ steps.changes.outputs.changed }}
           CHANGED_REGIONS: ${{ steps.changes.outputs.changed_regions }}
           FORCE_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.force_publish || false }}
-          REQUESTED_REGIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.regions || 'all' }}
           WORKFLOW_REF: ${{ github.ref }}
           PUBLISH_REF: refs/heads/main
         run: |
@@ -90,44 +95,34 @@ jobs:
       - name: Validate updated Lua 5.1 syntax
         if: steps.publish_scope.outputs.should_publish == 'true'
         shell: bash
+        env:
+          REGION: ${{ inputs.region }}
         run: |
           set -euo pipefail
           luac -p shared/Core.lua
-          for region in CN US EU TW KR; do
-            luac -p "QFXMythicRankData_${region}/Core.lua"
-            luac -p "QFXMythicRankData_${region}/Data.lua"
-          done
+          luac -p "QFXMythicRankData_${REGION}/Core.lua"
+          luac -p "QFXMythicRankData_${REGION}/Data.lua"
 
-      - name: Build installable regional packages
+      - name: Build installable ${{ inputs.region }} package
         if: steps.publish_scope.outputs.should_publish == 'true'
         shell: bash
         env:
-          PUBLISH_REGIONS: ${{ steps.publish_scope.outputs.regions }}
+          REGION: ${{ inputs.region }}
         run: |
           set -euo pipefail
-          IFS=',' read -ra regions <<< "${PUBLISH_REGIONS}"
-          args=()
-          for region in "${regions[@]}"; do
-            args+=("$(echo "$region" | tr '[:upper:]' '[:lower:]')")
-          done
           rm -rf dist
-          python scripts/build_packages.py --regions "${args[@]}"
+          python scripts/build_packages.py --regions "$(echo "${REGION}" | tr '[:upper:]' '[:lower:]')"
 
-      - name: Validate generated packages offline
+      - name: Validate generated package offline
         if: steps.publish_scope.outputs.should_publish == 'true'
         shell: bash
         env:
-          PUBLISH_REGIONS: ${{ steps.publish_scope.outputs.regions }}
+          REGION: ${{ inputs.region }}
         run: |
           set -euo pipefail
-          IFS=',' read -ra regions <<< "${PUBLISH_REGIONS}"
-          args=()
-          for region in "${regions[@]}"; do
-            args+=("$(echo "$region" | tr '[:upper:]' '[:lower:]')")
-          done
           python scripts/publish_curseforge_auto.py \
             --artifact-dir dist \
-            --regions "${args[@]}" \
+            --regions "$(echo "${REGION}" | tr '[:upper:]' '[:lower:]')" \
             --mode validate \
             --changelog-file publish-report/changelog.md \
             --report-file publish-report/prepublish-validation.json \
@@ -135,28 +130,26 @@ jobs:
             --source-artifact-id 0 \
             --source-commit pending
 
-      - name: Create the regional data commit locally
+      - name: Create the ${{ inputs.region }} regional data commit locally
         if: steps.changes.outputs.changed == 'true'
         id: commit
         shell: bash
+        env:
+          REGION: ${{ inputs.region }}
         run: |
           set -euo pipefail
           files=(
-            QFXMythicRankData_CN/Data.lua
-            QFXMythicRankData_CN/QFXMythicRankData_CN.toc
-            QFXMythicRankData_US/Data.lua
-            QFXMythicRankData_US/QFXMythicRankData_US.toc
-            QFXMythicRankData_EU/Data.lua
-            QFXMythicRankData_EU/QFXMythicRankData_EU.toc
-            QFXMythicRankData_TW/Data.lua
-            QFXMythicRankData_TW/QFXMythicRankData_TW.toc
-            QFXMythicRankData_KR/Data.lua
-            QFXMythicRankData_KR/QFXMythicRankData_KR.toc
+            "QFXMythicRankData_${REGION}/Data.lua"
+            "QFXMythicRankData_${REGION}/QFXMythicRankData_${REGION}.toc"
           )
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -- "${files[@]}"
-          git commit -m "Update regional Mythic+ cutoff data"
+          if git diff --cached --quiet; then
+            echo "No changes to commit for ${REGION}"
+            exit 0
+          fi
+          git commit -m "Update regional Mythic+ cutoff data (${REGION})"
           echo "commit_sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
 
       - name: Resolve publishing source commit
@@ -176,10 +169,6 @@ jobs:
             fi
             echo "sha=${GENERATED_COMMIT}" >> "${GITHUB_OUTPUT}"
           else
-            if [[ ! "${WORKFLOW_COMMIT}" =~ ^[0-9a-f]{40}$ ]]; then
-              echo "Workflow commit SHA is invalid." >&2
-              exit 1
-            fi
             echo "sha=${WORKFLOW_COMMIT}" >> "${GITHUB_OUTPUT}"
           fi
 
@@ -188,28 +177,23 @@ jobs:
         id: packages
         uses: actions/upload-artifact@v4
         with:
-          name: QFXMythicRankData-packages-${{ github.run_id }}
+          name: QFXMythicRankData-package-${{ inputs.region }}-${{ github.run_id }}
           path: dist/*.zip
           retention-days: 5
           if-no-files-found: error
 
-      - name: Upload changed regional packages to CurseForge
+      - name: Upload changed regional package to CurseForge
         if: steps.publish_scope.outputs.should_publish == 'true'
         id: curseforge
         shell: bash
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          PUBLISH_REGIONS: ${{ steps.publish_scope.outputs.regions }}
+          REGION: ${{ inputs.region }}
         run: |
           set -euo pipefail
-          IFS=',' read -ra regions <<< "${PUBLISH_REGIONS}"
-          args=()
-          for region in "${regions[@]}"; do
-            args+=("$(echo "$region" | tr '[:upper:]' '[:lower:]')")
-          done
           python scripts/publish_curseforge_auto.py \
             --artifact-dir dist \
-            --regions "${args[@]}" \
+            --regions "$(echo "${REGION}" | tr '[:upper:]' '[:lower:]')" \
             --mode upload \
             --changelog-file publish-report/changelog.md \
             --report-file publish-report/report.json \
@@ -221,12 +205,29 @@ jobs:
         if: always() && steps.publish_scope.outputs.should_publish == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: curseforge-publish-report-${{ github.run_id }}
+          name: curseforge-publish-report-${{ inputs.region }}-${{ github.run_id }}
           path: publish-report/report.json
           retention-days: 30
           if-no-files-found: warn
 
-      - name: Push published regional data to main
+      - name: Push published ${{ inputs.region }} data to main (with rebase retry)
         if: steps.changes.outputs.changed == 'true' && steps.curseforge.outcome == 'success'
         shell: bash
-        run: git push origin HEAD:main
+        env:
+          REGION: ${{ inputs.region }}
+          PUBLISH_REF: refs/heads/main
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3 4 5; do
+            if git push origin "HEAD:${PUBLISH_REF}"; then
+              echo "Pushed ${REGION} regional data."
+              exit 0
+            fi
+            echo "Push attempt ${attempt} failed; rebasing onto latest main..."
+            git fetch origin "${PUBLISH_REF}"
+            git rebase "origin/${PUBLISH_REF#refs/heads/}" || true
+          done
+          echo "Failed to push ${REGION} regional data after retries." >&2
+          exit 1

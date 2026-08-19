@@ -1,0 +1,23 @@
+name: Update KR Regional Data
+
+on:
+  schedule:
+    # KR 16:00 KST = 07:00 UTC (afternoon snapshot, covers daytime play)
+    - cron: "0 7 * * *"
+    # KR 04:00 KST = 19:00 UTC (overnight snapshot, covers evening play)
+    - cron: "0 19 * * *"
+  workflow_dispatch:
+    inputs:
+      force_publish:
+        description: "Publish even when regional data is unchanged"
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  update-kr:
+    uses: ./.github/workflows/region-update-shared.yml
+    with:
+      region: KR
+      force_publish: ${{ inputs.force_publish || false }}
+    secrets: inherit

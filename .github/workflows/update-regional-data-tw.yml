@@ -1,0 +1,23 @@
+name: Update TW Regional Data
+
+on:
+  schedule:
+    # TW 16:00 CST = 08:00 UTC (afternoon snapshot, covers daytime play)
+    - cron: "0 8 * * *"
+    # TW 04:00 CST = 20:00 UTC (overnight snapshot, covers evening play)
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+    inputs:
+      force_publish:
+        description: "Publish even when regional data is unchanged"
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  update-tw:
+    uses: ./.github/workflows/region-update-shared.yml
+    with:
+      region: TW
+      force_publish: ${{ inputs.force_publish || false }}
+    secrets: inherit

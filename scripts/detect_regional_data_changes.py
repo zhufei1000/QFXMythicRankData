@@ -48,9 +48,10 @@ def read_git_file(
 def detect_changed_regions(
     repo_root: pathlib.Path,
     base_ref: str = "HEAD",
+    regions: Sequence[str] = REGIONS,
 ) -> list[str]:
     changed_regions: list[str] = []
-    for region in REGIONS:
+    for region in regions:
         relative_path = regional_data_path(region)
         previous = read_git_file(repo_root, base_ref, relative_path)
         current_path = repo_root / relative_path
@@ -76,6 +77,12 @@ def write_github_output(path: pathlib.Path, changed_regions: Sequence[str]) -> N
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-ref", default="HEAD")
+    parser.add_argument(
+        "--regions",
+        nargs="+",
+        default=list(REGIONS),
+        help="Restrict change detection to the given regions (default: all).",
+    )
     parser.add_argument("--github-output", type=pathlib.Path)
     return parser.parse_args()
 
@@ -83,7 +90,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     repo_root = pathlib.Path(__file__).resolve().parents[1]
-    changed_regions = detect_changed_regions(repo_root, args.base_ref)
+    changed_regions = detect_changed_regions(repo_root, args.base_ref, args.regions)
 
     if args.github_output is not None:
         write_github_output(args.github_output, changed_regions)
