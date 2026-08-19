@@ -1,68 +1,20 @@
 {
   "dungeons": {
-    "algethar-academy": {
-      "id": 14032,
-      "names": {
-        "zhCN": "艾杰斯亚学院",
-        "zhTW": "艾傑斯亞學院"
-      },
-      "aliases": ["学院", "academy"]
-    },
-    "magisters-terrace": {
-      "id": 15829,
-      "names": {
-        "zhCN": "魔导师平台",
-        "zhTW": "博學者殿堂"
-      },
-      "aliases": ["魔导师", "博學者", "magister"]
-    },
-    "maisara-caverns": {
-      "id": 16395,
-      "names": {
-        "zhCN": "迈萨拉洞窟",
-        "zhTW": "邁薩拉洞窟"
-      },
-      "aliases": ["迈萨拉", "邁薩拉", "maisara"]
-    },
-    "nexuspoint-xenas": {
-      "id": 16573,
-      "names": {
-        "zhCN": "节点希纳斯",
-        "zhTW": "節點希納斯"
-      },
-      "aliases": ["希纳斯", "希納斯", "xenas", "nexuspoint", "nexus-point"]
-    },
-    "pit-of-saron": {
-      "id": 4813,
-      "names": {
-        "zhCN": "萨隆矿坑",
-        "zhTW": "薩倫之淵"
-      },
-      "aliases": ["萨隆", "薩倫", "pitofsaron"]
-    },
-    "seat-of-the-triumvirate": {
-      "id": 8910,
-      "names": {
-        "zhCN": "执政团之座",
-        "zhTW": "三傑議會之座"
-      },
-      "aliases": ["执政团", "執政團", "三傑議會", "triumvirate"]
-    },
-    "skyreach": {
-      "id": 6988,
-      "names": {
-        "zhCN": "通天峰",
-        "zhTW": "擎天峰"
-      },
-      "aliases": []
-    },
-    "windrunner-spire": {
-      "id": 15808,
-      "names": {
-        "zhCN": "风行者之塔",
-        "zhTW": "風行者之塔"
-      },
-      "aliases": ["风行者", "風行者", "windrunner"]
-    }
+    "algethar-academy": {"id": 14032,"names": {"zhCN": "艾杰斯亚学院","zhTW": "艾傑斯亞學院"},"aliases": ["学院", "academy"]},
+    "magisters-terrace": {"id": 15829,"names": {"zhCN": "魔导师平台","zhTW": "博學者殿堂"},"aliases": ["魔导师", "博學者", "magister"]},
+    "maisara-caverns": {"id": 16395,"names": {"zhCN": "迈萨拉洞窟","zhTW": "邁薩拉洞窟"},"aliases": ["迈萨拉", "邁薩拉", "maisara"]},
+    "nexuspoint-xenas": {"id": 16573,"names": {"zhCN": "节点希纳斯","zhTW": "節點希納斯"},"aliases": ["希纳斯", "希納斯", "xenas", "nexuspoint", "nexus-point"]},
+    "pit-of-saron": {"id": 4813,"names": {"zhCN": "萨隆矿坑","zhTW": "薩倫之淵"},"aliases": ["萨隆", "薩倫", "pitofsaron"]},
+    "seat-of-the-triumvirate": {"id": 8910,"names": {"zhCN": "执政团之座","zhTW": "三傑議會之座"},"aliases": ["执政团", "執政團", "三傑議會", "triumvirate"]},
+    "skyreach": {"id": 6988,"names": {"zhCN": "通天峰","zhTW": "擎天峰"},"aliases": []},
+    "windrunner-spire": {"id": 15808,"names": {"zhCN": "风行者之塔","zhTW": "風行者之塔"},"aliases": ["风行者", "風行者", "windrunner"]},
+    "altar-of-fangs": {"id": 16865,"names": {"zhCN": "毒牙祭坛","zhTW": "毒牙祭壇"},"aliases": ["毒牙", "altar"]},
+    "den-of-nalorakk": {"id": 16368,"names": {"zhCN": "纳洛拉克的洞穴","zhTW": "納羅拉克之穴"},"aliases": ["纳洛拉克", "納羅拉克", "nalorakk"]},
+    "kings-rest": {"id": 9526,"names": {"zhCN": "诸王之眠","zhTW": "諸王之眠"},"aliases": ["诸王", "諸王", "kingsrest"]},
+    "murder-row": {"id": 16091,"names": {"zhCN": "密谋小径","zhTW": "兇殺路"},"aliases": ["密谋", "密謀", "兇殺", "murderrow"]},
+    "ruby-life-pools": {"id": 14063,"names": {"zhCN": "红玉新生法池","zhTW": "晶紅生命之池"},"aliases": ["红玉", "紅玉", "晶红", "晶紅", "rubylifepools"]},
+    "temple-of-sethraliss": {"id": 9527,"names": {"zhCN": "塞塔里斯神庙","zhTW": "瑟沙利斯神廟"},"aliases": ["塞塔里斯", "瑟沙利斯", "sethraliss"]},
+    "the-blinding-vale": {"id": 16359,"names": {"zhCN": "夺目谷","zhTW": "盲目谷地"},"aliases": ["夺目", "奪目", "盲目", "blindingvale"]},
+    "voidscar-arena": {"id": 16425,"names": {"zhCN": "虚空之痕竞技场","zhTW": "虛無之痕競技場"},"aliases": ["虚空之痕", "虛空之痕", "虛無之痕", "voidscar"]}
   }
 }
