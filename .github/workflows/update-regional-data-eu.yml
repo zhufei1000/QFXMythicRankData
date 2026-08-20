@@ -16,6 +16,9 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: write
+
 jobs:
   update-eu:
     uses: ./.github/workflows/region-update-shared.yml

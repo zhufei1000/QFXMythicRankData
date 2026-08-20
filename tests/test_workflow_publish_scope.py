@@ -134,6 +134,14 @@ def test_workflow_secret_is_scoped_only_to_upload_and_absent_from_pr_ci() -> Non
     assert "RAIDERIO_ACCESS_KEY" not in pr_workflow
 
 
+@pytest.mark.parametrize("region", ["cn", "eu", "kr", "tw", "us"])
+def test_regional_caller_grants_shared_workflow_write_permission(region: str) -> None:
+    workflow = (
+        ROOT / f".github/workflows/update-regional-data-{region}.yml"
+    ).read_text(encoding="utf-8")
+    assert "permissions:\n  contents: write\n\njobs:" in workflow
+
+
 def test_workflow_artifact_is_run_scoped_and_uploads_only_dist_zips() -> None:
     workflow = (ROOT / ".github/workflows/update-regional-data.yml").read_text(
         encoding="utf-8"

@@ -123,21 +123,26 @@ def test_configure_publisher_sets_runtime_metadata(
     assert publish.SOURCE_COMMIT == "a" * 40
 
 
-def test_scheduled_workflow_runs_twice_and_only_publishes_changed_regions() -> None:
-    workflow = (ROOT / ".github/workflows/update-regional-data.yml").read_text(
+def test_scheduled_regional_workflows_run_twice_and_publish_independently() -> None:
+    for region in ("cn", "eu", "kr", "tw", "us"):
+        workflow = (
+            ROOT / f".github/workflows/update-regional-data-{region}.yml"
+        ).read_text(encoding="utf-8")
+        assert workflow.count("cron:") == 2
+        assert "uses: ./.github/workflows/region-update-shared.yml" in workflow
+        assert f"region: {region.upper()}" in workflow
+        assert "permissions:\n  contents: write" in workflow
+        assert "secrets: inherit" in workflow
+
+    shared = (ROOT / ".github/workflows/region-update-shared.yml").read_text(
         encoding="utf-8"
     )
-    assert workflow.count("cron:") == 2
-    assert 'cron: "17 1 * * *"' in workflow
-    assert 'cron: "17 13 * * *"' in workflow
-    assert "steps.changes.outputs.changed_regions" in workflow
-    assert "steps.publish_scope.outputs.regions" in workflow
-    assert workflow.count('--regions "${args[@]}"') == 3
-    assert "CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}" in workflow
-    assert workflow.index("Upload changed regional packages to CurseForge") < workflow.index(
-        "Push published regional data to main"
+    assert "steps.changes.outputs.changed_regions" in shared
+    assert "CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}" in shared
+    assert shared.index("Upload changed regional package to CurseForge") < shared.index(
+        "Push published ${{ inputs.region }} data to main"
     )
-    assert "group: curseforge-regional-publish" in workflow
+    assert "group: regional-publish-${{ inputs.region }}" in shared
 
 
 def test_pr_validation_workflow_is_fixed_and_read_only() -> None:
