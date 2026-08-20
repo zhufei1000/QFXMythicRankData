@@ -272,6 +272,25 @@ def test_optional_achievement_may_be_missing_or_null(replacement: object) -> Non
     assert "keystoneHero" not in data["achievements"]
 
 
+@pytest.mark.parametrize("faction", updater.FACTIONS)
+@pytest.mark.parametrize("replacement", [pytest.param("missing", id="missing"), None])
+def test_optional_achievement_with_incomplete_factions_is_omitted(
+    faction: str, replacement: object
+) -> None:
+    payload = load_fixture("cn")
+    if replacement == "missing":
+        del payload["cutoffs"]["keystoneLegend"][faction]
+    else:
+        payload["cutoffs"]["keystoneLegend"][faction] = replacement
+    data = updater.normalize(
+        payload,
+        "cn",
+        static_payload=load_named_fixture("static_data.json"),
+        score_tiers_payload=load_named_fixture("score_tiers.json"),
+    )
+    assert "keystoneLegend" not in data["achievements"]
+
+
 def test_achievement_allows_zero_rank_and_percentile() -> None:
     data = updater.normalize(
         load_fixture("cn"),

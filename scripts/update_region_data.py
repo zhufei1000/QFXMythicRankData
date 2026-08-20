@@ -846,6 +846,16 @@ def normalize_achievement_cutoff(raw: Any, key: str) -> dict[str, Any]:
     return entry
 
 
+def normalize_optional_achievement_cutoff(
+    raw: Any, key: str
+) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        raise ValueError(f"cutoffs.{key} is not an object")
+    if any(raw.get(faction) is None for faction in FACTIONS):
+        return None
+    return normalize_achievement_cutoff(raw, key)
+
+
 def normalize_history(
     graph_data: Any, updated_at: str | dt.datetime
 ) -> dict[str, list[dict[str, Any]]]:
@@ -1066,7 +1076,9 @@ def build_ready_region_data(
     for key in ACHIEVEMENT_KEYS:
         raw = raw_cutoffs.get(key)
         if raw is not None:
-            achievements[key] = normalize_achievement_cutoff(raw, key)
+            achievement = normalize_optional_achievement_cutoff(raw, key)
+            if achievement is not None:
+                achievements[key] = achievement
     if achievements:
         data["achievements"] = achievements
 

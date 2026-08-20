@@ -30,6 +30,8 @@ Schema Version 2 stores normalized source data for:
 - Mythic+ achievement score cutoffs
 - Raider.IO's source history points from the most recent 30 days
 - all-faction, Horde, and Alliance regional populations and cutoff colors
+- optional achievement thresholds only when Raider.IO supplies all three faction nodes;
+  an incomplete optional achievement is omitted without weakening core rank validation
 - the current season's start/end times and dungeon pool
 - source-provided keystone bracket levels and season remapping status
 - Raider.IO score color tiers
