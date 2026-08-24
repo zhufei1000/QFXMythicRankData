@@ -2,12 +2,12 @@
 
 Low-allocation V2 talent data split into three load-on-demand modules.
 
-Version: `2026.08.23.1654.21`
+Version: `2026.08.24.0511.43`
 
 Minimum display addon version: `0.5.0`
 
 Mythic+ combinations: `320`
 
-Heroic raid combinations: `352`
+Heroic raid combinations: `357`
 
-Mythic raid combinations: `34`
+Mythic raid combinations: `61`
