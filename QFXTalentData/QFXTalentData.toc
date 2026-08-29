@@ -1,5 +1,5 @@
 ## Interface: 120007, 120100
-## Version: 2026.08.29.0045.32
+## Version: 2026.08.29.1115.17
 ## Title: |cff00ccffQFX Talent Data|r
 ## Notes: Core API and manifests for QFX talent recommendations.
 ## Notes-zhCN: QFX天赋推荐数据库核心与清单。
@@ -8,7 +8,7 @@
 ## X-Category: Data
 ## X-Curse-Project-ID: 1627870
 ## X-QFX-Data-API: 2
-## X-QFX-Data-Version: 2026.08.29.0045.32
+## X-QFX-Data-Version: 2026.08.29.1115.17
 ## X-QFX-Min-Display-Version: 0.5.0
 
 Core.lua
