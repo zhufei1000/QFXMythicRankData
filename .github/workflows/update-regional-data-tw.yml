@@ -2,10 +2,10 @@ name: Update TW Regional Data
 
 on:
   schedule:
-    # TW 18:00 CST = 10:00 UTC (final daytime snapshot, ~2h after the 16:00 boundary)
-    - cron: "0 10 * * *"
-    # TW 06:00 CST = 22:00 UTC (final overnight snapshot, ~2h after the 04:00 boundary)
-    - cron: "0 22 * * *"
+    - cron: "4 4 * * *"
+      timezone: "Asia/Taipei"
+    - cron: "16 16 * * *"
+      timezone: "Asia/Taipei"
   workflow_dispatch:
     inputs:
       force_publish:

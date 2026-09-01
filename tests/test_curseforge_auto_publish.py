@@ -124,11 +124,21 @@ def test_configure_publisher_sets_runtime_metadata(
 
 
 def test_scheduled_regional_workflows_run_twice_and_publish_independently() -> None:
+    timezones = {
+        "cn": "Asia/Shanghai",
+        "eu": "Europe/Paris",
+        "kr": "Asia/Seoul",
+        "tw": "Asia/Taipei",
+        "us": "America/New_York",
+    }
     for region in ("cn", "eu", "kr", "tw", "us"):
         workflow = (
             ROOT / f".github/workflows/update-regional-data-{region}.yml"
         ).read_text(encoding="utf-8")
         assert workflow.count("cron:") == 2
+        assert 'cron: "4 4 * * *"' in workflow
+        assert 'cron: "16 16 * * *"' in workflow
+        assert workflow.count(f'timezone: "{timezones[region]}"') == 2
         assert "uses: ./.github/workflows/region-update-shared.yml" in workflow
         assert f"region: {region.upper()}" in workflow
         assert "permissions:\n  contents: write" in workflow

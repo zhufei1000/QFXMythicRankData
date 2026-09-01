@@ -127,6 +127,7 @@ def _write_state_data(
     population: int,
     cutoffs: dict,
     data_version: str = "202607170100",
+    package_version: str | None = None,
 ) -> None:
     config = REGIONS[region]
     addon = config["addon"]
@@ -144,10 +145,12 @@ def _write_state_data(
         "population": population,
         "cutoffs": cutoffs,
     }
+    if package_version is not None:
+        data["packageVersion"] = package_version
     (directory / "Data.lua").write_text(updater.render_lua(data), encoding="utf-8")
     (directory / f"{addon}.toc").write_text(
         "## Interface: 120000\n"
-        f"## Version: 2.0.{data_version}\n"
+        f"## Version: 2.0.{package_version or data_version}\n"
         f"## X-Curse-Project-ID: {config['curseforge_project_id']}\n"
         f"## X-Data-Region: {config['region_upper']}\n"
         "Core.lua\nData.lua\n",
@@ -227,6 +230,27 @@ def test_five_regions_can_build_with_independent_versions(
     monkeypatch.setattr(build_packages, "ROOT", source)
     packages = build_packages.build_packages(output)
     assert len({package["version"] for package in packages}) == 5
+
+
+def test_package_version_can_differ_from_source_data_version(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_state_data(
+        tmp_path,
+        "cn",
+        "ready",
+        "active",
+        True,
+        100,
+        {"p999": {"all": {"score": 4000}}},
+        data_version="202607150110",
+        package_version="202607151616",
+    )
+    monkeypatch.setattr(build_packages, "ROOT", tmp_path)
+    validated = build_packages.validate_addon("cn", REGIONS["cn"])
+    assert validated["dataVersion"] == "202607150110"
+    assert validated["packageVersion"] == "202607151616"
+    assert validated["version"] == "2.0.202607151616"
 
 
 def _copy_addon(region: str, destination: pathlib.Path) -> dict:

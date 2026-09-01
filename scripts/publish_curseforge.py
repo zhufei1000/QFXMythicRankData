@@ -135,7 +135,7 @@ def _validate_package(region: str, zip_path: pathlib.Path) -> Package:
     if filename_match is None:
         raise PublishError(f"{region_upper}: unexpected ZIP filename {zip_path.name!r}")
     filename_version = filename_match.group(1)
-    filename_data_version = filename_match.group(2)
+    filename_package_version = filename_match.group(2)
 
     expected_names = {
         f"{addon}/Core.lua",
@@ -181,9 +181,22 @@ def _validate_package(region: str, zip_path: pathlib.Path) -> Package:
     interface_versions = tuple(_interface_name(value, region_upper) for value in interface_values)
 
     data_version_matches = re.findall(r'^\s*dataVersion\s*=\s*"([^"]+)"\s*,', data_text, re.MULTILINE)
-    if data_version_matches != [filename_data_version]:
-        raise PublishError(f"{region_upper}: Data.lua dataVersion does not match ZIP filename")
-    if toc_version != f"2.0.{filename_data_version}":
+    if len(data_version_matches) != 1 or re.fullmatch(r"[0-9]{12}", data_version_matches[0]) is None:
+        raise PublishError(f"{region_upper}: Data.lua dataVersion is invalid")
+    package_version_matches = re.findall(
+        r'^\s*packageVersion\s*=\s*"([^"]+)"\s*,', data_text, re.MULTILINE
+    )
+    if len(package_version_matches) > 1:
+        raise PublishError(f"{region_upper}: Data.lua packageVersion is duplicated")
+    package_version = (
+        package_version_matches[0]
+        if package_version_matches
+        else data_version_matches[0]
+    )
+    if package_version != filename_package_version:
+        field = "packageVersion" if package_version_matches else "dataVersion"
+        raise PublishError(f"{region_upper}: Data.lua {field} does not match ZIP filename")
+    if toc_version != f"2.0.{filename_package_version}":
         raise PublishError(f"{region_upper}: TOC version is not derived from Data.lua")
     region_matches = re.findall(r'^\s*region\s*=\s*"([^"]+)"\s*,', data_text, re.MULTILINE)
     if region_matches != [region]:
@@ -214,7 +227,7 @@ def _validate_package(region: str, zip_path: pathlib.Path) -> Package:
         project_id=project_id,
         zip_path=zip_path,
         version=toc_version,
-        data_version=filename_data_version,
+        data_version=data_version_matches[0],
         season=season_matches[0],
         status=status,
         season_state=season_state,

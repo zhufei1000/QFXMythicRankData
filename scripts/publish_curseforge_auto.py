@@ -15,6 +15,9 @@ from region_config import REGIONS, SUPPORTED_REGIONS
 
 VERSION_RE = re.compile(r"^2\.0\.([0-9]{12})$")
 DATA_VERSION_RE = re.compile(r'^ {4}dataVersion\s*=\s*"([0-9]{12})"\s*,', re.MULTILINE)
+PACKAGE_VERSION_RE = re.compile(
+    r'^ {4}packageVersion\s*=\s*"([0-9]{12})"\s*,', re.MULTILINE
+)
 SEASON_RE = re.compile(r'^ {4}season\s*=\s*"(season-[a-z0-9-]+)"\s*,', re.MULTILINE)
 STATUS_RE = re.compile(r'^ {4}status\s*=\s*"(ready|collecting|offseason)"\s*,', re.MULTILINE)
 SEASON_STATE_RE = re.compile(r'^ {4}seasonState\s*=\s*"(active|upcoming|ended)"\s*,', re.MULTILINE)
@@ -35,6 +38,15 @@ def _one_match(pattern: re.Pattern[str], text: str, field: str, source: str) -> 
     if len(matches) != 1:
         raise publisher.PublishError(f"{source}: expected exactly one {field}")
     return matches[0]
+
+
+def _optional_match(
+    pattern: re.Pattern[str], text: str, field: str, source: str
+) -> str | None:
+    matches = pattern.findall(text)
+    if len(matches) > 1:
+        raise publisher.PublishError(f"{source}: expected at most one {field}")
+    return matches[0] if matches else None
 
 
 def discover_releases(
@@ -61,7 +73,7 @@ def discover_releases(
         match = VERSION_RE.fullmatch(version)
         if match is None:
             raise publisher.PublishError(f"{addon}: invalid package version {version!r}")
-        filename_data_version = match.group(1)
+        filename_package_version = match.group(1)
 
         data_name = f"{addon}/Data.lua"
         try:
@@ -71,14 +83,17 @@ def discover_releases(
             raise publisher.PublishError(f"{addon}: unable to inspect Data.lua") from exc
 
         data_version = _one_match(DATA_VERSION_RE, data_text, "dataVersion", addon)
+        package_version = _optional_match(
+            PACKAGE_VERSION_RE, data_text, "packageVersion", addon
+        ) or data_version
         season = _one_match(SEASON_RE, data_text, "season", addon)
         status = _one_match(STATUS_RE, data_text, "status", addon)
         season_state = _one_match(
             SEASON_STATE_RE, data_text, "seasonState", addon
         )
-        if data_version != filename_data_version:
+        if package_version != filename_package_version:
             raise publisher.PublishError(
-                f"{addon}: filename version does not match Data.lua dataVersion"
+                f"{addon}: filename version does not match Data.lua packageVersion"
             )
         if status in {"ready", "collecting"} and season_state != "active":
             raise publisher.PublishError(f"{addon}: status and seasonState conflict")

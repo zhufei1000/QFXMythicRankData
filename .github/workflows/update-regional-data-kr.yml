@@ -2,10 +2,10 @@ name: Update KR Regional Data
 
 on:
   schedule:
-    # KR 18:00 KST = 09:00 UTC (final daytime snapshot, ~2h after the 16:00 boundary)
-    - cron: "0 9 * * *"
-    # KR 06:00 KST = 21:00 UTC (final overnight snapshot, ~2h after the 04:00 boundary)
-    - cron: "0 21 * * *"
+    - cron: "4 4 * * *"
+      timezone: "Asia/Seoul"
+    - cron: "16 16 * * *"
+      timezone: "Asia/Seoul"
   workflow_dispatch:
     inputs:
       force_publish:

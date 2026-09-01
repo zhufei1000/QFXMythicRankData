@@ -99,7 +99,7 @@ def main() -> int:
         print(f"Publishable data changed for regions: {', '.join(changed_regions)}")
     else:
         print("No publishable regional data changes were detected.")
-        print("Only volatile timestamps or package versions changed.")
+        print("Generated regional data matches the committed baseline.")
         print("CurseForge publishing will be skipped.")
     return 0
 

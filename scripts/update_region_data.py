@@ -1104,6 +1104,26 @@ def stable_timestamp(value: dt.datetime) -> str:
     return value.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def apply_distribution_metadata(
+    data: dict[str, Any], checked_at: dt.datetime | None = None
+) -> dict[str, Any]:
+    checked = (checked_at or dt.datetime.now(dt.timezone.utc)).astimezone(
+        dt.timezone.utc
+    ).replace(microsecond=0)
+    source_updated_at = data.get("sourceUpdatedAt") or data.get("updatedAt")
+    if not isinstance(source_updated_at, str) or not source_updated_at.strip():
+        raise ValueError("source updated timestamp is missing")
+
+    timestamp = stable_timestamp(checked)
+    data["sourceUpdatedAt"] = source_updated_at
+    data["checkedAt"] = timestamp
+    # The automated workflow publishes this exact generated package before it
+    # pushes Data.lua to main, so committed data has also been published.
+    data["publishedAt"] = timestamp
+    data["packageVersion"] = checked.strftime("%Y%m%d%H%M")
+    return data
+
+
 def build_empty_region_data(
     region: str,
     context: SeasonContext,
@@ -1313,14 +1333,14 @@ def atomic_write(path: pathlib.Path, content: str) -> bool:
 
 
 def prepare_toc_content(
-    path: pathlib.Path, data_version: str, schema_version: int = 2
+    path: pathlib.Path, package_version: str, schema_version: int = 2
 ) -> str:
     if not path.is_file():
         raise FileNotFoundError(f"TOC file is missing: {path}")
     old = path.read_text(encoding="utf-8")
     new, replacements = re.subn(
         r"^## Version:.*$",
-        f"## Version: {schema_version}.0.{data_version}",
+        f"## Version: {schema_version}.0.{package_version}",
         old,
         count=1,
         flags=re.MULTILINE,
@@ -1341,7 +1361,9 @@ def write_region_data(
     toc_file = pathlib.Path(toc) if toc else toc_path(region)
     rendered_data = render_lua(data)
     rendered_toc = prepare_toc_content(
-        toc_file, data["dataVersion"], data["schemaVersion"]
+        toc_file,
+        data.get("packageVersion", data["dataVersion"]),
+        data["schemaVersion"],
     )
     data_changed = atomic_write(output_path, rendered_data)
     toc_changed = atomic_write(toc_file, rendered_toc)
@@ -1354,7 +1376,11 @@ def write_region_data(
         "seasonState": data.get("seasonState"),
         "available": data["available"],
         "updatedAt": data["updatedAt"],
+        "sourceUpdatedAt": data.get("sourceUpdatedAt", data["updatedAt"]),
+        "checkedAt": data.get("checkedAt"),
+        "publishedAt": data.get("publishedAt"),
         "dataVersion": data["dataVersion"],
+        "packageVersion": data.get("packageVersion", data["dataVersion"]),
         "population": data["population"],
         "dataChanged": data_changed,
         "tocChanged": toc_changed,
@@ -1375,6 +1401,7 @@ def update_region(
     toc: str | pathlib.Path | None = None,
     static_payload: dict[str, Any] | None = None,
     score_tiers_payload: list[Any] | None = None,
+    checked_at: dt.datetime | None = None,
 ) -> dict[str, Any]:
     if region not in SUPPORTED_REGIONS:
         raise ValueError(f"unsupported region: {region}")
@@ -1454,6 +1481,7 @@ def update_region(
         raise ValueError(
             f"response season {data['season']} does not match requested {resolved_season}"
         )
+    apply_distribution_metadata(data, checked_at)
     return write_region_data(region, data, output=output, toc=toc)
 
 

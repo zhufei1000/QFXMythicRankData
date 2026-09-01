@@ -27,7 +27,15 @@ def _data(
     available: str = "true",
     population: int = 100,
     dungeon: str = "alpha",
+    checked_at: str = "",
+    package_version: str = "",
 ) -> str:
+    distribution_metadata = ""
+    if checked_at:
+        distribution_metadata += f'    checkedAt = "{checked_at}",\n'
+        distribution_metadata += f'    publishedAt = "{checked_at}",\n'
+    if package_version:
+        distribution_metadata += f'    packageVersion = "{package_version}",\n'
     return (
         f'API:RegisterRegion("{region.lower()}", {{\n'
         f'    dataVersion = "{data_version}",\n'
@@ -40,6 +48,7 @@ def _data(
         f'    seasonInfo = {{ dungeons = {{ "{dungeon}" }} }},\n'
         "    cutoffs = { p999 = {} },\n"
         f"    score = {score},\n"
+        f"{distribution_metadata}"
         "})\n"
     )
 
@@ -95,6 +104,20 @@ def test_toc_version_change_does_not_trigger_publish(tmp_path: pathlib.Path) -> 
     toc = repo / "QFXMythicRankData_CN" / "QFXMythicRankData_CN.toc"
     toc.write_text("## Version: 1.0.202607162100\n", encoding="utf-8")
     assert detect.detect_changed_regions(repo) == []
+
+
+def test_new_check_and_package_version_trigger_publish(tmp_path: pathlib.Path) -> None:
+    repo = _create_repo(tmp_path)
+    path = repo / "QFXMythicRankData_CN" / "Data.lua"
+    path.write_text(
+        _data(
+            "CN",
+            checked_at="2026-07-16T16:16:00Z",
+            package_version="202607161616",
+        ),
+        encoding="utf-8",
+    )
+    assert detect.detect_changed_regions(repo) == ["CN"]
 
 
 def test_score_change_triggers_publish(tmp_path: pathlib.Path) -> None:

@@ -2,10 +2,10 @@ name: Update CN Regional Data
 
 on:
   schedule:
-    # CN 18:00 CST = 10:00 UTC (final daytime snapshot, ~2h after the 16:00 boundary)
-    - cron: "0 10 * * *"
-    # CN 06:00 CST = 22:00 UTC (final overnight snapshot, ~2h after the 04:00 boundary)
-    - cron: "0 22 * * *"
+    - cron: "4 4 * * *"
+      timezone: "Asia/Shanghai"
+    - cron: "16 16 * * *"
+      timezone: "Asia/Shanghai"
   workflow_dispatch:
     inputs:
       force_publish:

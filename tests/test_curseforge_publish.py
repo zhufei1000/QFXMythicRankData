@@ -41,16 +41,23 @@ def _data(region_key: str, **changes: str) -> str:
     values = {
         "register": region_key,
         "data_version": publish.DATA_VERSION,
+        "package_version": "",
         "region": region_key,
         "season": "season-mn-1",
         "status": "ready",
         "season_state": "active",
     }
     values.update(changes)
+    package_line = (
+        f'    packageVersion = "{values["package_version"]}",\n'
+        if values["package_version"]
+        else ""
+    )
     return (
         "local API = _G.QFXMythicRankData\n"
         f'API:RegisterRegion("{values["register"]}", {{\n'
         f'    dataVersion = "{values["data_version"]}",\n'
+        f"{package_line}"
         f'    region = "{values["region"]}",\n'
         f'    season = "{values["season"]}",\n'
         f'    status = "{values["status"]}",\n'
@@ -179,6 +186,33 @@ def test_validates_independent_versions_seasons_and_statuses(
     assert len({package.version for package in packages}) == 5
     assert packages[0].status == "collecting"
     assert packages[2].status == "offseason"
+
+
+def test_package_version_can_differ_from_source_data_version(
+    tmp_path: pathlib.Path,
+) -> None:
+    artifact = tmp_path / "artifact"
+    artifact.mkdir()
+    package_version = "202607151616"
+    version = f"2.0.{package_version}"
+    _write_package(
+        artifact,
+        "cn",
+        filename=f"{REGIONS['cn']['addon']}-{version}.zip",
+        toc=_toc("cn", version=version),
+        data=_data(
+            "cn",
+            data_version="202607150110",
+            package_version=package_version,
+        ),
+    )
+    changelog = tmp_path / "changelog.md"
+    changelog.write_text(publish.EXPECTED_CHANGELOG, encoding="utf-8")
+    package = publish.validate_artifact(
+        artifact, changelog, regions=["cn"]
+    )[0]
+    assert package.version == version
+    assert package.data_version == "202607150110"
 
 
 def test_one_region_version_mismatch_is_not_hidden_by_other_regions(

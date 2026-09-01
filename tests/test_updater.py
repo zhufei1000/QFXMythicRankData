@@ -54,12 +54,19 @@ def test_fixture_generates_valid_regional_lua(
         input_json=FIXTURES / f"{region}.json",
         output=output,
         toc=toc,
+        checked_at=dt.datetime(2026, 7, 15, 16, 16, tzinfo=dt.timezone.utc),
     )
 
     generated = output.read_text(encoding="utf-8")
     assert result["success"] is True
     assert result["region"] == region
     assert result["dataVersion"] == "202607150110"
+    assert result["packageVersion"] == "202607151616"
+    assert result["sourceUpdatedAt"] == "2026-07-15T01:10:00.000Z"
+    assert result["checkedAt"] == "2026-07-15T16:16:00Z"
+    assert result["publishedAt"] == "2026-07-15T16:16:00Z"
+    assert 'packageVersion = "202607151616"' in generated
+    assert 'sourceUpdatedAt = "2026-07-15T01:10:00.000Z"' in generated
     assert f'API:RegisterRegion("{region}"' in generated
     assert f'region = "{region}"' in generated
     assert "available = true" in generated
@@ -67,7 +74,7 @@ def test_fixture_generates_valid_regional_lua(
     for key in updater.REQUIRED_KEYS:
         assert f"{key} = {{" in generated
     toc_text = toc.read_text(encoding="utf-8")
-    assert "## Version: 1.0.202607150110" in toc_text
+    assert "## Version: 1.0.202607151616" in toc_text
     assert toc_text.count("## X-Curse-Project-ID:") == 1
     assert (
         f"## X-Curse-Project-ID: {REGIONS[region]['curseforge_project_id']}"
@@ -154,15 +161,19 @@ def test_invalid_data_does_not_overwrite_existing_files(
     assert toc.read_text(encoding="utf-8") == original_toc
 
 
-def test_toc_version_updates_from_data_timestamp(tmp_path: pathlib.Path) -> None:
+def test_toc_version_updates_from_package_timestamp(tmp_path: pathlib.Path) -> None:
     output = tmp_path / "Data.lua"
     toc = tmp_path / "addon.toc"
     write_toc(toc, REGIONS["eu"]["curseforge_project_id"])
     updater.update_region(
-        "eu", input_json=FIXTURES / "eu.json", output=output, toc=toc
+        "eu",
+        input_json=FIXTURES / "eu.json",
+        output=output,
+        toc=toc,
+        checked_at=dt.datetime(2026, 7, 15, 16, 16, tzinfo=dt.timezone.utc),
     )
     toc_text = toc.read_text(encoding="utf-8")
-    assert "## Version: 1.0.202607150110" in toc_text
+    assert "## Version: 1.0.202607151616" in toc_text
     assert toc_text.count("## X-Curse-Project-ID:") == 1
     assert "## X-Curse-Project-ID: 1610330" in toc_text
 
@@ -204,6 +215,7 @@ def test_complete_schema_v2_generates_all_source_data(
         score_tiers_input_json=FIXTURES / "score_tiers.json",
         output=output,
         toc=toc,
+        checked_at=dt.datetime(2026, 7, 15, 16, 16, tzinfo=dt.timezone.utc),
     )
     generated = output.read_text(encoding="utf-8")
     assert result["schemaVersion"] == 2
@@ -221,7 +233,7 @@ def test_complete_schema_v2_generates_all_source_data(
     assert "rgbDecimal" not in generated
     assert "icon_url" not in generated
     assert "background_image_url" not in generated
-    assert "## Version: 2.0.202607150110" in toc.read_text(encoding="utf-8")
+    assert "## Version: 2.0.202607151616" in toc.read_text(encoding="utf-8")
 
 
 def test_lua_array_serialization_uses_numeric_array_entries() -> None:

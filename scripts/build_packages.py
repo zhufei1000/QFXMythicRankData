@@ -34,6 +34,17 @@ def _top_level_value(name: str, pattern: str, text: str) -> str:
     return _one_match(rf"^ {{4}}{re.escape(name)}\s*=\s*{pattern}\s*,", text, name)
 
 
+def _optional_top_level_value(name: str, pattern: str, text: str) -> str | None:
+    matches = re.findall(
+        rf"^ {{4}}{re.escape(name)}\s*=\s*{pattern}\s*,",
+        text,
+        flags=re.MULTILINE,
+    )
+    if len(matches) > 1:
+        raise ValueError(f"expected at most one {name}, found {len(matches)}")
+    return matches[0] if matches else None
+
+
 def validate_addon(region: str, config: dict[str, Any]) -> dict[str, Any]:
     addon = config["addon"]
     addon_dir = ROOT / addon
@@ -52,6 +63,9 @@ def validate_addon(region: str, config: dict[str, Any]) -> dict[str, Any]:
     schema_version = int(_top_level_value("schemaVersion", r"([0-9]+)", data_text))
     data_region = _top_level_value("region", r'"([a-z]+)"', data_text)
     data_version = _top_level_value("dataVersion", r'"([0-9]{12})"', data_text)
+    package_version = _optional_top_level_value(
+        "packageVersion", r'"([0-9]{12})"', data_text
+    ) or data_version
     status = _top_level_value("status", r'"([^\"]+)"', data_text)
     season_state = _top_level_value("seasonState", r'"([^\"]+)"', data_text)
     available = _top_level_value("available", r"(true|false)", data_text)
@@ -96,7 +110,7 @@ def validate_addon(region: str, config: dict[str, Any]) -> dict[str, Any]:
     ):
         raise ValueError(f"{addon} has inconsistent offseason state")
 
-    expected_version = f"2.0.{data_version}"
+    expected_version = f"2.0.{package_version}"
     if toc_version != expected_version:
         raise ValueError(
             f"{addon} TOC Version {toc_version} does not match {expected_version}"
@@ -117,6 +131,7 @@ def validate_addon(region: str, config: dict[str, Any]) -> dict[str, Any]:
         "addon": addon,
         "version": toc_version,
         "dataVersion": data_version,
+        "packageVersion": package_version,
         "status": status,
         "seasonState": season_state,
         "curseforge_project_id": project_id,
@@ -163,6 +178,7 @@ def build_packages(
                 "file": archive.name,
                 "version": validated["version"],
                 "dataVersion": validated["dataVersion"],
+                "packageVersion": validated["packageVersion"],
                 "status": validated["status"],
                 "seasonState": validated["seasonState"],
                 "curseforge_project_id": validated["curseforge_project_id"],

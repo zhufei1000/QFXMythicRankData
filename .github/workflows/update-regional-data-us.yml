@@ -2,12 +2,10 @@ name: Update US Regional Data
 
 on:
   schedule:
-    # US Eastern: 18:00 EST / 19:00 EDT = 23:00 UTC.
-    # This keeps at least a ~2h buffer after the 16:00 local boundary year-round.
-    - cron: "0 23 * * *"
-    # US Eastern: 06:00 EST / 07:00 EDT = 11:00 UTC.
-    # This keeps at least a ~2h buffer after the 04:00 local boundary year-round.
-    - cron: "0 11 * * *"
+    - cron: "4 4 * * *"
+      timezone: "America/New_York"
+    - cron: "16 16 * * *"
+      timezone: "America/New_York"
   workflow_dispatch:
     inputs:
       force_publish:

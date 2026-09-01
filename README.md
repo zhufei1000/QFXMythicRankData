@@ -35,6 +35,8 @@ Schema Version 2 stores normalized source data for:
 - the current season's start/end times and dungeon pool
 - source-provided keystone bracket levels and season remapping status
 - Raider.IO score color tiers
+- separate source, collection, publication, and package-version timestamps so
+  consumers can distinguish stale upstream data from a delayed updater
 
 The regional rank packages contain no player names, realms, full leaderboard, dungeon-run members, equipment, talents, class statistics, or current affix schedule. Historical points are stored exactly as normalized source points: the database does not calculate daily changes, faction ratios, cross-region comparisons, or display results.
 
@@ -142,8 +144,8 @@ The talent pipeline uses `RAIDERIO_ACCESS_KEY` when available and requires `WCL_
 
 ## Automation and packages
 
-The `Update Regional Mythic Rank Data` workflow runs twice daily at 09:17 and 21:17 China Standard Time and can be started manually. A normal same-season update makes about seven Raider.IO requests: one `static-data`, one shared `score-tiers`, and five regional `season-cutoffs` requests.
+Each regional `Update Regional Mythic Rank Data` workflow runs at 04:04 and 16:16 in that region's local time and can be started manually. The schedules use IANA time zones, so US and EU runs follow daylight-saving changes automatically. Every successful check receives a distinct package version while `dataVersion` and `sourceUpdatedAt` continue to identify the Raider.IO source snapshot.
 
 The `Update QFX Talent Data` workflow runs twice daily. It requires all Raider.IO, Warcraft Logs, and CurseForge credentials before collection begins; a missing credential stops the run instead of publishing an incomplete database. It collects global Mythic+ samples plus Heroic and Mythic raid samples, generates the base addon and three load-on-demand content addons in one installable archive, validates every Lua file with Lua 5.1, verifies display-version compatibility, and publishes changed data to CurseForge project `1627870` before committing it to `main`. A failed upload leaves `main` unchanged so the next scheduled run can retry safely.
 
-Only regional rank packages with publishable changes are built and passed to their validated CurseForge publishing step. The separate read-only `Validate Pull Request` workflow runs tests, Lua 5.1 validation, and regional package builds without contacting Raider.IO, Warcraft Logs, or CurseForge.
+Every validated regional check is packaged and passed to its CurseForge publishing step, then committed to `main` only after upload succeeds. The separate read-only `Validate Pull Request` workflow runs tests, Lua 5.1 validation, and regional package builds without contacting Raider.IO, Warcraft Logs, or CurseForge.
