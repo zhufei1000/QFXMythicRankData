@@ -1371,4 +1371,8 @@ API:RegisterRegion("tw", {
             color = "#ffffff",
         },
     },
+    sourceUpdatedAt = "Mon Aug 31 2026 23:17:46 GMT+0000 (Coordinated Universal Time)",
+    checkedAt = "2026-09-01T01:49:10Z",
+    publishedAt = "2026-09-01T01:49:10Z",
+    packageVersion = "202609010149",
 })
