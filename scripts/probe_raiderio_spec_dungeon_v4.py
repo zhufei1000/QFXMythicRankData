@@ -9,10 +9,12 @@ import threading
 import time
 from collections import Counter, defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import probe_raiderio_spec_dungeon_v2 as core
+from talent_statistics import select_specialization_hero_representative
+from wcl_talent_export import DEFAULT_TALENTS_URL, TalentExporter, TalentExportError
 
 TARGET = 10
 WORKERS = 160
@@ -33,6 +35,8 @@ class TalentSample:
     features: frozenset[str]
     node_choices: tuple[tuple[str, str], ...]
     hero_subtree_id: int | None
+    talents: tuple[tuple[int, int, int | None, int], ...]
+    rank: int | None = None
 
 
 @dataclass(frozen=True)
@@ -54,14 +58,6 @@ def _positive_rank(entry: dict[str, Any]) -> int | None:
     return None
 
 
-def _first_identity(entry: dict[str, Any], keys: tuple[str, ...]) -> tuple[str, str] | None:
-    for key in keys:
-        value = entry.get(key)
-        if isinstance(value, (int, str)) and str(value):
-            return key, str(value)
-    return None
-
-
 def parse_talent(member: dict[str, Any]) -> TalentSample | None:
     loadout = (member.get("character") or {}).get("talentLoadout")
     if not isinstance(loadout, dict):
@@ -73,18 +69,38 @@ def parse_talent(member: dict[str, Any]) -> TalentSample | None:
 
     features: set[str] = set()
     choices: list[tuple[str, str]] = []
+    talents: list[tuple[int, int, int | None, int]] = []
     for entry in loadout.get("loadout") or []:
         if not isinstance(entry, dict) or entry.get("selected") is False:
             continue
         rank = _positive_rank(entry)
         if rank is not None and rank <= 0:
             continue
-        slot = _first_identity(entry, ("nodeId", "entryId", "talentId", "spellId"))
-        choice = _first_identity(entry, ("entryId", "talentId", "spellId", "nodeId"))
-        if not slot or not choice:
+        rank = rank or 1
+        node = entry.get("node") if isinstance(entry.get("node"), dict) else {}
+        node_id = node.get("id", entry.get("nodeId"))
+        raw_entries = node.get("entries") if isinstance(node.get("entries"), list) else []
+        entry_index = entry.get("entryIndex")
+        selected_entry = (
+            raw_entries[entry_index]
+            if isinstance(entry_index, int)
+            and 0 <= entry_index < len(raw_entries)
+            and isinstance(raw_entries[entry_index], dict)
+            else {}
+        )
+        entry_id = selected_entry.get("id", entry.get("entryId"))
+        spell = selected_entry.get("spell")
+        spell_id = (
+            spell.get("id")
+            if isinstance(spell, dict)
+            else selected_entry.get("spellId", entry.get("spellId"))
+        )
+        if not isinstance(node_id, int) or not isinstance(entry_id, int):
             continue
-        slot_key = f"{slot[0]}:{slot[1]}"
-        choice_key = f"{choice[0]}:{choice[1]}:r{rank if rank is not None else 1}"
+        spell_id = spell_id if isinstance(spell_id, int) else None
+        talents.append((node_id, entry_id, spell_id, rank))
+        slot_key = f"nodeId:{node_id}"
+        choice_key = f"entryId:{entry_id}:r{rank}"
         choices.append((slot_key, choice_key))
         features.add(f"{slot_key}={choice_key}")
 
@@ -94,7 +110,15 @@ def parse_talent(member: dict[str, Any]) -> TalentSample | None:
         features.add(f"hero:{hero_id}")
         choices.append(("hero", f"hero:{hero_id}"))
 
-    return TalentSample(text, frozenset(features), tuple(sorted(set(choices))), hero_id)
+    return TalentSample(
+        text,
+        frozenset(features),
+        tuple(sorted(set(choices))),
+        hero_id,
+        tuple(sorted(set(talents), key=lambda value: (
+            value[0], value[1], value[2] if value[2] is not None else -1, value[3]
+        ))),
+    )
 
 
 def fetch_summary(
@@ -159,11 +183,21 @@ def validate(
     target = summary.roster.get(candidate.character_key) if summary and summary.dungeon_id == candidate.dungeon_id else None
     if not target or target[0] != candidate.spec_id:
         return candidate, None
-    return candidate, target[1]
+    sample = target[1]
+    return candidate, replace(sample, rank=candidate.rank) if sample else None
 
 
-def select_recommendation(samples: dict[str, TalentSample]) -> dict[str, Any]:
-    ordered = list(samples.items())
+def select_recommendation(
+    samples: dict[str, TalentSample],
+    exporter: TalentExporter | None = None,
+    spec_id: int | None = None,
+) -> dict[str, Any]:
+    indexed = list(enumerate(samples.items()))
+    indexed.sort(key=lambda item: (
+        item[1][1].rank if item[1][1].rank is not None else 10**9,
+        item[0],
+    ))
+    ordered = [item for _, item in indexed]
     n = len(ordered)
     if not n:
         return {
@@ -181,16 +215,39 @@ def select_recommendation(samples: dict[str, TalentSample]) -> dict[str, Any]:
     structured = [(key, sample) for key, sample in ordered if sample.features]
     exact_counts = Counter(sample.loadout_text for _, sample in ordered)
 
-    if structured:
-        feature_counts = Counter(feature for _, sample in structured for feature in sample.features)
-        majority = {feature for feature, count in feature_counts.items() if count * 2 >= len(structured)}
-        order_index = {key: index for index, (key, _) in enumerate(ordered)}
-
-        def score(item: tuple[str, TalentSample]) -> tuple[int, int, int]:
-            distance = len(item[1].features.symmetric_difference(majority))
-            return distance, -exact_counts[item[1].loadout_text], order_index[item[0]]
-
-        _, recommended = min(structured, key=score)
+    canonical_by_key: dict[str, str] = {}
+    if exporter is not None and spec_id is not None:
+        for key, sample in ordered:
+            try:
+                canonical_by_key[key] = exporter.encode_node_payload(
+                    spec_id,
+                    [
+                        {
+                            "node_id": node_id,
+                            "entry_id": entry_id,
+                            "spell_id": spell_id,
+                            "rank": rank,
+                        }
+                        for node_id, entry_id, spell_id, rank in sample.talents
+                    ],
+                )
+            except TalentExportError:
+                continue
+    if canonical_by_key:
+        selected_text = select_specialization_hero_representative(
+            exporter,
+            spec_id,
+            (
+                (canonical_by_key[key], sample.rank)
+                for key, sample in ordered
+                if key in canonical_by_key
+            ),
+        )
+        _, recommended = next(
+            (key, sample)
+            for key, sample in ordered
+            if canonical_by_key.get(key) == selected_text
+        )
     else:
         first_index = {
             text: next(index for index, (_, sample) in enumerate(ordered) if sample.loadout_text == text)
@@ -232,8 +289,18 @@ def select_recommendation(samples: dict[str, TalentSample]) -> dict[str, Any]:
         "sample_loadouts": [
             {
                 "character_key": key,
+                "rank": sample.rank,
                 "loadout": sample.loadout_text,
                 "hero_subtree_id": sample.hero_subtree_id,
+                "talents": [
+                    {
+                        "node_id": node_id,
+                        "entry_id": entry_id,
+                        **({"spell_id": spell_id} if spell_id is not None else {}),
+                        "rank": rank,
+                    }
+                    for node_id, entry_id, spell_id, rank in sample.talents
+                ],
             }
             for key, sample in ordered
         ],
@@ -306,6 +373,10 @@ def render(result: dict[str, Any]) -> str:
 def main() -> int:
     started = time.monotonic()
     OUT.mkdir(parents=True, exist_ok=True)
+    talent_exporter = TalentExporter.download(
+        url=DEFAULT_TALENTS_URL,
+        cache_path=OUT / "raidbots_talents_live.json",
+    )
 
     static = core.request_json(core.STATIC_URL, {"expansion_id": core.EXPANSION_ID}, kind="static-data", v1=True)
     if not isinstance(static, dict):
@@ -337,11 +408,22 @@ def main() -> int:
     completed: list[str] = []
     spec_stats: list[dict[str, Any]] = []
 
-    def enqueue(ranked: list[dict[str, Any]], sid: int, queues: dict[int, deque[core.Candidate]]) -> int:
+    def enqueue(
+        ranked: list[dict[str, Any]],
+        sid: int,
+        queues: dict[int, deque[core.Candidate]],
+        rank_base: int,
+    ) -> int:
         added = 0
-        for row in ranked:
+        for rank_offset, row in enumerate(ranked, 1):
             if not isinstance(row, dict):
                 continue
+            raw_rank = row.get("rank")
+            source_rank = (
+                int(raw_rank)
+                if isinstance(raw_rank, (int, float)) and raw_rank > 0
+                else rank_base + rank_offset
+            )
             ckey = core.character_key(row.get("character") or {})
             if not ckey:
                 continue
@@ -356,7 +438,7 @@ def main() -> int:
                 if not isinstance(logged, int) or logged <= 0 or not isinstance(run_id, int) or run_id <= 0:
                     continue
                 attempted[did][sid].add(ckey)
-                queues[did].append(core.Candidate(did, sid, ckey, run_id))
+                queues[did].append(core.Candidate(did, sid, ckey, run_id, source_rank))
                 added += 1
         return added
 
@@ -412,7 +494,7 @@ def main() -> int:
                     break
                 pages += 1
                 ranked_seen += len(ranked)
-                live_candidates += enqueue(ranked, sid, queues)
+                live_candidates += enqueue(ranked, sid, queues, page * core.PAGE_SIZE)
                 ui = ((payload.get("rankings") or {}).get("ui") or {}) if isinstance(payload, dict) else {}
                 last_page = ui.get("lastPage") if isinstance(ui.get("lastPage"), int) else last_page
                 fill(pool, sid, queues)
@@ -453,7 +535,7 @@ def main() -> int:
         minimum = TARGET
         variations = 0
         for sid in core.SPEC_NAMES:
-            analysis = select_recommendation(samples[did][sid])
+            analysis = select_recommendation(samples[did][sid], talent_exporter, sid)
             count = analysis["sample_count"]
             minimum = min(minimum, count)
             if count >= TARGET:
@@ -486,6 +568,7 @@ def main() -> int:
         dungeon_results.append(
             {
                 "dungeon_id": did,
+                "challenge_mode_id": by_id[did].get("challenge_mode_id"),
                 "name": by_id[did].get("name"),
                 "slug": by_id[did].get("slug"),
                 "specs_at_target": specs_at_target,
@@ -499,7 +582,7 @@ def main() -> int:
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "season_name": season_name,
         "season_slug": season_slug,
-        "strategy": "fixed 10 valid logged-run talents per dungeon/spec; choose a real import string closest to majority nodes; never expand",
+        "strategy": "fixed 10 valid logged-run talents per dungeon/spec; group by identical specialization+hero trees while ignoring the class tree; choose the highest-ranked full loadout from the largest group",
         "target_per_dungeon_spec": TARGET,
         "max_pages_per_spec": MAX_PAGES,
         "workers": WORKERS,

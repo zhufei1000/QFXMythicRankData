@@ -35,6 +35,36 @@ class SpecSchema:
     entries: dict[int, tuple[int, ...]]
 
 
+def select_specialization_hero_representative(
+    exporter: TalentExporter,
+    spec_id: int,
+    candidates: Iterable[tuple[str, int | None]],
+) -> str:
+    """Select a real full loadout from the dominant spec+hero group.
+
+    General/class-tree choices are ignored while grouping.  The highest-ranked
+    candidate wins inside the largest group and also breaks group-size ties.
+    Input order is the final fallback when a source rank is unavailable.
+    """
+    groups: dict[
+        tuple[tuple[int, int, int], ...],
+        list[tuple[str, tuple[int, int]]],
+    ] = defaultdict(list)
+    for position, (loadout, source_rank) in enumerate(candidates):
+        rank = source_rank if isinstance(source_rank, int) and source_rank > 0 else position + 1
+        signature = exporter.specialization_hero_signature(loadout, spec_id)
+        groups[signature].append((loadout, (rank, position)))
+    if not groups:
+        raise TalentExportError(f"spec {spec_id} has no representative candidates")
+
+    winning_group = min(
+        groups.values(),
+        key=lambda members: (-len(members), min(rank_key for _, rank_key in members)),
+    )
+    selected, _ = min(winning_group, key=lambda item: item[1])
+    return selected
+
+
 def _append_varint(output: bytearray, value: int) -> None:
     if value < 0:
         raise ValueError("varints must not be negative")

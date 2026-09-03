@@ -90,6 +90,7 @@ class Node:
     max_ranks: int
     free: bool
     entries: tuple[int, ...]
+    entry_spells: dict[int, int]
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,7 @@ class TalentTree:
     full_node_order: tuple[int, ...]
     nodes: dict[int, Node]
     entry_to_node: dict[int, int]
+    specialization_hero_node_ids: frozenset[int]
 
 
 def iter_talents(value: Any) -> Iterable[tuple[int, int]]:
@@ -115,16 +117,23 @@ class TalentExporter:
     def __init__(self, trees: Iterable[dict[str, Any]]) -> None:
         raw_trees = list(trees)
         shared_nodes: dict[int, Node] = {}
+        shared_specialization_hero_node_ids: set[int] = set()
         for raw_tree in raw_trees:
             for group in ("classNodes", "specNodes", "heroNodes", "subTreeNodes"):
                 for raw_node in raw_tree.get(group) or []:
                     node = self._parse_node(raw_node)
                     if node:
                         shared_nodes.setdefault(node.node_id, node)
+                        if group != "classNodes":
+                            shared_specialization_hero_node_ids.add(node.node_id)
 
         self.trees: dict[int, TalentTree] = {}
         for raw_tree in raw_trees:
-            tree = self._parse_tree(raw_tree, shared_nodes)
+            tree = self._parse_tree(
+                raw_tree,
+                shared_nodes,
+                shared_specialization_hero_node_ids,
+            )
             if tree.spec_id in self.trees:
                 raise TalentExportError(f"duplicate talent tree for spec {tree.spec_id}")
             self.trees[tree.spec_id] = tree
@@ -171,6 +180,12 @@ class TalentExporter:
             max_ranks=max(1, int(raw_node.get("maxRanks") or 1)),
             free=bool(raw_node.get("freeNode")),
             entries=entries,
+            entry_spells={
+                entry["id"]: entry["spellId"]
+                for entry in raw_entries
+                if isinstance(entry.get("id"), int)
+                and isinstance(entry.get("spellId"), int)
+            },
         )
 
     @classmethod
@@ -178,6 +193,7 @@ class TalentExporter:
         cls,
         raw: dict[str, Any],
         shared_nodes: dict[int, Node],
+        shared_specialization_hero_node_ids: set[int],
     ) -> TalentTree:
         spec_id = raw.get("specId")
         order = raw.get("fullNodeOrder")
@@ -205,6 +221,34 @@ class TalentExporter:
             full_node_order=tuple(int(node_id) for node_id in order),
             nodes=nodes,
             entry_to_node=entry_to_node,
+            specialization_hero_node_ids=frozenset(
+                node_id
+                for node_id in order
+                if node_id in shared_specialization_hero_node_ids
+            ),
+        )
+
+    def specialization_hero_signature(
+        self,
+        loadout_text: str,
+        expected_spec_id: int,
+    ) -> tuple[tuple[int, int, int], ...]:
+        """Return only specialization and hero-tree choices for grouping.
+
+        Class-tree (general) talents are deliberately excluded.  A selected
+        real sample can therefore supply its complete class tree after the
+        most common specialization+hero group has been identified.
+        """
+        tree = self.trees.get(expected_spec_id)
+        if not tree:
+            raise TalentExportError(
+                f"no current talent tree for spec {expected_spec_id}"
+            )
+        states = self.decode(loadout_text, expected_spec_id)
+        return tuple(
+            (node_id, states[node_id][0], states[node_id][1])
+            for node_id in tree.full_node_order
+            if node_id in tree.specialization_hero_node_ids and node_id in states
         )
 
     def encode_payload(self, spec_id: int, payload: Any) -> str:
@@ -214,6 +258,66 @@ class TalentExporter:
             if previous is not None and previous != rank:
                 raise TalentExportError(f"entry {entry_id} has conflicting ranks")
             selected[entry_id] = rank
+        return self.encode(spec_id, selected)
+
+    def encode_node_payload(self, spec_id: int, payload: Any) -> str:
+        """Encode node-aware samples, remapping entries changed by a live patch.
+
+        Raider.IO run details retain the node, selected entry, and spell IDs from
+        the client build that produced the run.  Entry IDs can change when a
+        choice node becomes a single node, while the node and spell remain
+        stable.  Resolve in that order so old positional import strings can be
+        rebuilt against the current tree without guessing across nodes.
+        """
+        tree = self.trees.get(spec_id)
+        if not tree:
+            raise TalentExportError(f"no current talent tree for spec {spec_id}")
+        if not isinstance(payload, list):
+            raise TalentExportError("node-aware talent payload is not a list")
+
+        selected: dict[int, int] = {}
+        for raw in payload:
+            if not isinstance(raw, dict):
+                continue
+            node_id = raw.get("node_id", raw.get("nodeId"))
+            entry_id = raw.get("entry_id", raw.get("entryId"))
+            spell_id = raw.get("spell_id", raw.get("spellId"))
+            rank = raw.get("rank", 1)
+            if not isinstance(node_id, int) or not isinstance(rank, int) or rank <= 0:
+                continue
+            node = tree.nodes.get(node_id)
+            if not node:
+                # The source run can predate a patch that removed this node.
+                # Omitting it is safe; inventing a replacement talent is not.
+                continue
+
+            resolved: int | None = entry_id if entry_id in node.entries else None
+            if resolved is None and isinstance(spell_id, int):
+                matches = [
+                    candidate
+                    for candidate in node.entries
+                    if node.entry_spells.get(candidate) == spell_id
+                ]
+                if len(matches) == 1:
+                    resolved = matches[0]
+            if resolved is None and len(node.entries) == 1:
+                # A common patch migration is choice -> single.  The node ID
+                # keeps this fallback scoped to the same talent position.
+                resolved = node.entries[0]
+            if resolved is None:
+                # The selected side of a choice was removed and replaced.
+                # There is no evidence for either current choice, so leave the
+                # node unselected instead of fabricating a recommendation.
+                continue
+            previous = selected.get(resolved)
+            if previous is not None and previous != rank:
+                raise TalentExportError(f"entry {resolved} has conflicting ranks")
+            selected[resolved] = rank
+
+        if not selected:
+            raise TalentExportError(
+                f"spec {spec_id} node-aware talent payload has no selected entries"
+            )
         return self.encode(spec_id, selected)
 
     def encode(self, spec_id: int, selected_entries: dict[int, int]) -> str:

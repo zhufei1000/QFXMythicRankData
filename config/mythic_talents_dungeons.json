@@ -63,6 +63,70 @@
         "zhTW": "風行者之塔"
       },
       "aliases": ["风行者", "風行者", "windrunner"]
+    },
+    "altar-of-fangs": {
+      "id": 16865,
+      "names": {
+        "zhCN": "毒牙祭坛",
+        "zhTW": "毒牙祭壇"
+      },
+      "aliases": ["毒牙", "altar"]
+    },
+    "den-of-nalorakk": {
+      "id": 16368,
+      "names": {
+        "zhCN": "纳洛拉克的洞穴",
+        "zhTW": "納羅拉克之穴"
+      },
+      "aliases": ["纳洛拉克", "納羅拉克", "nalorakk"]
+    },
+    "kings-rest": {
+      "id": 9526,
+      "names": {
+        "zhCN": "诸王之眠",
+        "zhTW": "諸王之眠"
+      },
+      "aliases": ["诸王", "諸王", "kingsrest"]
+    },
+    "murder-row": {
+      "id": 16091,
+      "names": {
+        "zhCN": "密谋小径",
+        "zhTW": "兇殺路"
+      },
+      "aliases": ["密谋", "密謀", "兇殺", "murderrow"]
+    },
+    "ruby-life-pools": {
+      "id": 14063,
+      "names": {
+        "zhCN": "红玉新生法池",
+        "zhTW": "晶紅生命之池"
+      },
+      "aliases": ["红玉", "紅玉", "晶红", "晶紅", "rubylifepools"]
+    },
+    "temple-of-sethraliss": {
+      "id": 9527,
+      "names": {
+        "zhCN": "塞塔里斯神庙",
+        "zhTW": "瑟沙利斯神廟"
+      },
+      "aliases": ["塞塔里斯", "瑟沙利斯", "sethraliss"]
+    },
+    "the-blinding-vale": {
+      "id": 16359,
+      "names": {
+        "zhCN": "夺目谷",
+        "zhTW": "盲目谷地"
+      },
+      "aliases": ["夺目", "奪目", "盲目", "blindingvale"]
+    },
+    "voidscar-arena": {
+      "id": 16425,
+      "names": {
+        "zhCN": "虚空之痕竞技场",
+        "zhTW": "虛無之痕競技場"
+      },
+      "aliases": ["虚空之痕", "虛空之痕", "虛無之痕", "voidscar"]
     }
   }
 }

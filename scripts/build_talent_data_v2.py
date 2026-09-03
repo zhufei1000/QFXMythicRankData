@@ -26,8 +26,9 @@ from talent_statistics import (
     build_spec_schema,
     pack_schema,
     pack_statistics_v2,
+    select_specialization_hero_representative,
 )
-from wcl_talent_export import TalentExporter
+from wcl_talent_export import TalentExporter, TalentExportError
 
 
 API_VERSION = 2
@@ -55,6 +56,59 @@ class Record:
     recommended: str
     sample_count: int
     statistics: TalentStatistics
+
+
+def current_tree_loadouts(
+    exporter: TalentExporter,
+    spec_id: int,
+    raw_samples: Any,
+    _recommended: str | None,
+) -> tuple[list[str], str]:
+    """Canonicalize samples and choose the dominant spec+hero build.
+
+    General/class-tree nodes do not participate in grouping.  Within the
+    largest identical specialization+hero group, the highest-ranked real
+    sample supplies the complete loadout, including its general tree.  Ties
+    and an all-unique sample set therefore resolve to the highest rank.
+    """
+    loadouts: list[str] = []
+    candidates: list[tuple[str, int | None]] = []
+    errors: list[str] = []
+    rows = raw_samples if isinstance(raw_samples, list) else []
+    for position, raw in enumerate(rows[:10]):
+        original = legacy.txt(raw.get("loadout")) if isinstance(raw, dict) else legacy.txt(raw)
+        talents = raw.get("talents") if isinstance(raw, dict) else None
+        canonical: str | None = None
+        if isinstance(talents, list) and talents:
+            try:
+                canonical = exporter.encode_node_payload(spec_id, talents)
+            except TalentExportError as exc:
+                errors.append(f"structured: {exc}")
+        if canonical is None and original:
+            try:
+                exporter.decode(original, spec_id)
+                canonical = original
+            except TalentExportError as exc:
+                errors.append(f"import: {exc}")
+        if canonical:
+            loadouts.append(canonical)
+            raw_rank = raw.get("rank") if isinstance(raw, dict) else None
+            rank = raw_rank if isinstance(raw_rank, int) and raw_rank > 0 else position + 1
+            candidates.append((canonical, rank))
+
+    if not loadouts:
+        detail = "; ".join(dict.fromkeys(errors)) or "samples were empty"
+        raise TalentExportError(
+            f"spec {spec_id} has no current-tree-valid or canonicalizable talent "
+            f"samples ({detail})"
+        )
+
+    selected = select_specialization_hero_representative(
+        exporter,
+        spec_id,
+        candidates,
+    )
+    return loadouts, selected
 
 
 def arguments() -> argparse.Namespace:
@@ -102,12 +156,15 @@ def collect_records(
         spec_id = legacy.pos(row.get("spec_id"))
         if not dungeon_id or spec_id not in legacy.SPEC_CLASS:
             continue
-        loadouts = legacy.samples(row.get("sample_loadouts"))
-        recommended = legacy.txt(row.get("recommended_loadout"))
-        if not loadouts:
+        raw_samples = row.get("sample_loadouts")
+        if not isinstance(raw_samples, list) or not raw_samples:
             continue
-        if recommended not in loadouts:
-            recommended = loadouts[0]
+        loadouts, recommended = current_tree_loadouts(
+            exporter,
+            spec_id,
+            raw_samples,
+            legacy.txt(row.get("recommended_loadout")),
+        )
         records.append(Record(
             kind="mythicplus",
             spec_id=spec_id,
@@ -144,14 +201,15 @@ def collect_records(
             raid_id = boss_to_raid.get(boss_id or -1)
             if not boss_id or not raid_id or spec_id not in legacy.SPEC_CLASS:
                 continue
-            loadouts = legacy.samples(
-                row.get("samples") if isinstance(row.get("samples"), list) else []
-            )
-            recommended = legacy.txt(row.get("recommended_loadout"))
-            if not loadouts:
+            raw_samples = row.get("samples")
+            if not isinstance(raw_samples, list) or not raw_samples:
                 continue
-            if recommended not in loadouts:
-                recommended = loadouts[0]
+            loadouts, recommended = current_tree_loadouts(
+                exporter,
+                spec_id,
+                raw_samples,
+                legacy.txt(row.get("recommended_loadout")),
+            )
             records.append(Record(
                 kind=kind,
                 spec_id=spec_id,
@@ -224,8 +282,13 @@ def manifest_file(data: dict[str, Any]) -> str:
             for locale, name in dungeon["names"].items()
         )
         aliases = ", ".join(q(alias) for alias in dungeon["aliases"])
+        challenge = (
+            f",challengeModeID={dungeon['challengeModeID']}"
+            if dungeon.get("challengeModeID")
+            else ""
+        )
         output.append(
-            f"    {{id={dungeon['id']},slug={q(dungeon['slug'])},"
+            f"    {{id={dungeon['id']},slug={q(dungeon['slug'])}{challenge},"
             f"names={{{names}}},aliases={{{aliases}}}}},"
         )
     output.extend(["  },", "  raids={"])
@@ -510,7 +573,8 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         legacy.load(args.dungeon_locales),
     )
     raids, boss_to_raid = legacy.raid_manifest(
-        legacy.load(args.raid_locales)
+        legacy.load(args.raid_locales),
+        raid_inputs,
     )
     exporter = TalentExporter.from_path(args.talent_trees)
     spec_names, records, difficulties = collect_records(

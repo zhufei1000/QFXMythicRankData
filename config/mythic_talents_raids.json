@@ -123,6 +123,100 @@
           }
         }
       }
+    },
+    "the-tidebound-grotto": {
+      "id": 1317,
+      "names": {
+        "enUS": "The Tidebound Grotto",
+        "zhCN": "潮缚石窟",
+        "zhTW": "浪縛岩窟"
+      },
+      "aliases": ["Tidebound Grotto", "潮缚石窟", "潮縛石窟", "浪縛岩窟"],
+      "bosses": {
+        "3379": {
+          "slug": "nymrissa-wavecaller",
+          "names": {
+            "enUS": "Nymrissa Wavecaller",
+            "zhCN": "尼姆瑞莎·唤波者",
+            "zhTW": "妮莉莎‧喚浪者"
+          }
+        }
+      }
+    },
+    "the-venomous-abyss": {
+      "id": 1320,
+      "names": {
+        "enUS": "The Venomous Abyss",
+        "zhCN": "烈毒之渊",
+        "zhTW": "劇毒深淵"
+      },
+      "aliases": ["Venomous Abyss", "烈毒之渊", "烈毒之淵", "劇毒深淵"],
+      "bosses": {
+        "3470": {
+          "slug": "nekzali-the-soulcoiler",
+          "names": {
+            "enUS": "Nek'zali the Soulcoiler",
+            "zhCN": "盘魂者内克扎莉",
+            "zhTW": "『纏魂者』尼札利"
+          }
+        },
+        "3445": {
+          "slug": "entombed-sentinels",
+          "names": {
+            "enUS": "Entombed Sentinels",
+            "zhCN": "陵寝哨兵",
+            "zhTW": "埋葬衛哨"
+          }
+        },
+        "3497": {
+          "slug": "the-lost-explorers",
+          "names": {
+            "enUS": "The Lost Explorers",
+            "zhCN": "迷失的探险者",
+            "zhTW": "迷路的探險者"
+          }
+        },
+        "3455": {
+          "slug": "vashnik-the-malignant",
+          "names": {
+            "enUS": "Vashnik the Malignant",
+            "zhCN": "万毒邪祟者瓦什尼克",
+            "zhTW": "『惡性之毒』伐許尼克"
+          }
+        },
+        "3420": {
+          "slug": "sszorak",
+          "names": {
+            "enUS": "Sszorak",
+            "zhCN": "斯索拉克",
+            "zhTW": "司佐拉"
+          }
+        },
+        "3421": {
+          "slug": "the-twin-fangs",
+          "names": {
+            "enUS": "The Twin Fangs",
+            "zhCN": "双子毒牙",
+            "zhTW": "雙生毒牙"
+          }
+        },
+        "3429": {
+          "slug": "the-coiled-altar",
+          "names": {
+            "enUS": "The Coiled Altar",
+            "zhCN": "盘卷祭坛",
+            "zhTW": "盤蛇祭壇"
+          }
+        },
+        "3492": {
+          "slug": "ulatek",
+          "names": {
+            "enUS": "Ula'tek",
+            "zhCN": "乌拉特克",
+            "zhTW": "烏拉特克"
+          }
+        }
+      }
     }
   }
 }

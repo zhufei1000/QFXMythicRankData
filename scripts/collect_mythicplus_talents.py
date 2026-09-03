@@ -7,8 +7,8 @@ import probe_raiderio_spec_dungeon_v4 as base
 _original = base.select_recommendation
 
 
-def enhanced(samples):
-    result = _original(samples)
+def enhanced(samples, *args, **kwargs):
+    result = _original(samples, *args, **kwargs)
     ordered = list(samples.values())
     n = len(ordered)
     node_counts = defaultdict(Counter)

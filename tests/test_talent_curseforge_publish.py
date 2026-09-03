@@ -152,6 +152,9 @@ def test_workflow_uploads_changed_talent_data_before_pushing() -> None:
     assert "Require complete collection and publishing credentials" in workflow
     assert "refusing to build or publish an incomplete database" in workflow
     assert "omitting raid data for this run" not in workflow
+    assert "python scripts/discover_raid_targets.py" in workflow
+    assert "--zone 46" not in workflow
+    assert "--zone 50" not in workflow
     assert "Detect generated database changes" in workflow
     assert "python scripts/publish_talent_curseforge.py" in workflow
     assert "CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}" in workflow

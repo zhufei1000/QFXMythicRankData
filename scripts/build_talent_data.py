@@ -62,6 +62,21 @@ def samples(rows: Any) -> list[str]:
     return out
 
 
+def ranked_samples(rows: Any) -> list[tuple[str, int | None]]:
+    out: list[tuple[str, int | None]] = []
+    for position, row in enumerate(rows if isinstance(rows, list) else []):
+        value = row.get("loadout") if isinstance(row, dict) else row
+        value = txt(value)
+        if not value:
+            continue
+        raw_rank = row.get("rank") if isinstance(row, dict) else None
+        rank = raw_rank if isinstance(raw_rank, int) and raw_rank > 0 else position + 1
+        out.append((value, rank))
+        if len(out) == 10:
+            break
+    return out
+
+
 def version(raws: list[dict[str, Any]]) -> tuple[str, str]:
     stamps = []
     for raw in raws:
@@ -86,12 +101,19 @@ def dungeon_manifest(raw: dict[str, Any], cfg: dict[str, Any]) -> list[dict[str,
         local = meta.get("names") if isinstance(meta.get("names"), dict) else {}
         names = {"enUS": name, **{k: v for k in ("zhCN", "zhTW") if (v := txt(local.get(k)))}}
         aliases = list(dict.fromkeys(x for x in (txt(v) for v in [name, slug, *names.values(), *(meta.get("aliases") or [])]) if x))
-        out.append({"id": did, "slug": slug, "names": names, "aliases": aliases})
+        challenge_mode_id = pos(row.get("challenge_mode_id"))
+        out.append({
+            "id": did,
+            "slug": slug,
+            "names": names,
+            "aliases": aliases,
+            **({"challengeModeID": challenge_mode_id} if challenge_mode_id else {}),
+        })
     return out
 
 
-def raid_manifest(cfg: dict[str, Any]):
-    out, bosses = [], {}
+def raid_manifest(cfg: dict[str, Any], raws: list[dict[str, Any]] | None = None):
+    configured, bosses = [], {}
     root = cfg.get("raids") if isinstance(cfg.get("raids"), dict) else {}
     for slug, row in root.items():
         if not isinstance(row, dict): continue
@@ -108,8 +130,65 @@ def raid_manifest(cfg: dict[str, Any]):
             bn = {k: v for k in ("enUS", "zhCN", "zhTW") if (v := txt(raw_bn.get(k)))}
             boss_rows.append({"id": bid, "slug": txt(boss.get("slug")) or key, "names": bn})
             bosses[bid] = rid
-        out.append({"id": rid, "slug": slug, "names": names, "aliases": aliases, "bosses": boss_rows})
-    return out, bosses
+        configured.append({"id": rid, "slug": slug, "names": names, "aliases": aliases, "bosses": boss_rows})
+    if raws is None:
+        return configured, bosses
+
+    present: set[int] = set()
+    encounter_names: dict[int, str] = {}
+    for raw in raws:
+        for encounter in raw.get("encounters") or []:
+            if not isinstance(encounter, dict): continue
+            bid = pos(encounter.get("encounter_id", encounter.get("id")))
+            if bid:
+                present.add(bid)
+                encounter_names[bid] = txt(encounter.get("name")) or str(bid)
+        for recommendation in raw.get("recommendations") or []:
+            if not isinstance(recommendation, dict): continue
+            bid = pos(recommendation.get("encounter_id"))
+            if bid:
+                present.add(bid)
+                encounter_names.setdefault(bid, txt(recommendation.get("encounter")) or str(bid))
+
+    out = []
+    configured_bosses: set[int] = set()
+    for raid in configured:
+        available = [boss for boss in raid["bosses"] if boss["id"] in present]
+        if available:
+            out.append({**raid, "bosses": available})
+            configured_bosses.update(boss["id"] for boss in available)
+
+    # New tiers are immediately usable even before localized overrides are
+    # added: fall back to the WCL zone and encounter English names.
+    dynamic: dict[int, dict[str, Any]] = {}
+    for raw in raws:
+        zone_id = pos(raw.get("zone_id"))
+        zone_name = txt(raw.get("zone_name"))
+        if not zone_id or not zone_name: continue
+        slug = "-".join(part for part in "".join(
+            char.lower() if char.isalnum() else " " for char in zone_name
+        ).split() if part) or str(zone_id)
+        raid = dynamic.setdefault(zone_id, {
+            "id": zone_id,
+            "slug": slug,
+            "names": {"enUS": zone_name},
+            "aliases": [zone_name, slug],
+            "bosses": [],
+        })
+        known = {boss["id"] for boss in raid["bosses"]}
+        for encounter in raw.get("encounters") or []:
+            if not isinstance(encounter, dict): continue
+            bid = pos(encounter.get("encounter_id", encounter.get("id")))
+            if not bid or bid in configured_bosses or bid in known: continue
+            name = txt(encounter.get("name")) or encounter_names.get(bid) or str(bid)
+            boss_slug = "-".join(part for part in "".join(
+                char.lower() if char.isalnum() else " " for char in name
+            ).split() if part) or str(bid)
+            raid["bosses"].append({"id": bid, "slug": boss_slug, "names": {"enUS": name}})
+            bosses[bid] = zone_id
+            known.add(bid)
+    out.extend(raid for raid in dynamic.values() if raid["bosses"])
+    return out, {boss_id: raid_id for boss_id, raid_id in bosses.items() if boss_id in present}
 
 
 def packed_record(
@@ -138,9 +217,18 @@ def mplus(raw: dict[str, Any], exporter: Any | None = None):
         if not isinstance(row, dict): continue
         did, sid = pos(row.get("dungeon_id")), pos(row.get("spec_id"))
         if not did or sid not in SPEC_CLASS: continue
-        ss = samples(row.get("sample_loadouts")); rec = txt(row.get("recommended_loadout"))
+        raw_samples = row.get("sample_loadouts")
+        ss = samples(raw_samples); rec = txt(row.get("recommended_loadout"))
         if not ss: continue
-        if rec not in ss: rec = ss[0]
+        if exporter is not None:
+            from talent_statistics import select_specialization_hero_representative
+            rec = select_specialization_hero_representative(
+                exporter,
+                sid,
+                ranked_samples(raw_samples),
+            )
+        elif rec not in ss:
+            rec = ss[0]
         out[(sid, did)] = packed_record(sid, rec, ss, exporter)
         names.setdefault(sid, txt(row.get("spec")) or str(sid))
     return names, out
@@ -163,7 +251,15 @@ def raid_data(
             raw_samples = row.get("samples") if isinstance(row.get("samples"), list) else []
             ss = samples(raw_samples); rec = txt(row.get("recommended_loadout"))
             if not ss: continue
-            if rec not in ss: rec = ss[0]
+            if exporter is not None:
+                from talent_statistics import select_specialization_hero_representative
+                rec = select_specialization_hero_representative(
+                    exporter,
+                    sid,
+                    ranked_samples(raw_samples),
+                )
+            elif rec not in ss:
+                rec = ss[0]
             out[(sid, rid, bid, diff)] = packed_record(sid, rec, ss, exporter)
             names.setdefault(sid, txt(row.get("spec")) or str(sid))
     return names, out, diffs
@@ -192,7 +288,8 @@ def common(data: dict[str, Any]) -> str:
     out += ["  },", "  dungeons={"]
     for d in data["dungeons"]:
         names=", ".join(f"{k}={q(v)}" for k,v in d["names"].items()); aliases=", ".join(q(x) for x in d["aliases"])
-        out.append(f"    {{id={d['id']},slug={q(d['slug'])},names={{{names}}},aliases={{{aliases}}}}},")
+        challenge = f",challengeModeID={d['challengeModeID']}" if d.get("challengeModeID") else ""
+        out.append(f"    {{id={d['id']},slug={q(d['slug'])}{challenge},names={{{names}}},aliases={{{aliases}}}}},")
     out += ["  },", "  raids={"]
     for r in data["raids"]:
         names=", ".join(f"{k}={q(v)}" for k,v in r["names"].items()); aliases=", ".join(q(x) for x in r["aliases"])
@@ -299,7 +396,7 @@ def build(a: argparse.Namespace):
     if talent_trees:
         from wcl_talent_export import TalentExporter
         exporter = TalentExporter.from_path(talent_trees)
-    d=dungeon_manifest(mr,load(a.dungeon_locales)); raids,bosses=raid_manifest(load(a.raid_locales))
+    d=dungeon_manifest(mr,load(a.dungeon_locales)); raids,bosses=raid_manifest(load(a.raid_locales),rr)
     sn,m=mplus(mr, exporter); rn,rdata,diffs=raid_data(rr,bosses, exporter); sn.update(rn)
     generated,ver=version([mr,*rr])
     data={"generated":generated,"version":ver,"seasonName":txt(mr.get("season_name")) or "Unknown season","seasonSlug":txt(mr.get("season_slug")) or "unknown","dungeons":d,"raids":raids,"diffs":diffs,"specNames":sn,"mplus":m,"raidData":rdata}

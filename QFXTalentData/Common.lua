@@ -5,8 +5,8 @@ local manifest={
   dataVersion="2026.08.10.0624.53",
   minDisplayVersion="0.5.0",
   generatedAt="2026-08-10T06:24:53.367530+00:00",
-  seasonName="MN Season 1 • Full",
-  seasonSlug="season-mn-1",
+  seasonName="MN Season 2 • Display Test",
+  seasonSlug="season-mn-2",
   source="Raider.IO global Mythic+ rankings and Warcraft Logs global raid rankings",
   contentModules={
     mythicplus="QFXTalentData_MythicPlus",
@@ -102,5 +102,37 @@ local manifest={
     },
   },
 }
+
+-- Season 2 display preview.  Recommendation blobs intentionally remain the
+-- last complete package; these manifest overrides only exercise content names
+-- and automatic instance/encounter recognition before rankings are available.
+manifest.seasonName="MN Season 2 • Display Test"
+manifest.seasonSlug="season-mn-2"
+manifest.dungeons={
+  {id=16865,challengeModeID=588,slug="altar-of-fangs",names={enUS="Altar of Fangs",zhCN="毒牙祭坛",zhTW="毒牙祭壇"},aliases={"Altar of Fangs","altar-of-fangs","毒牙祭坛","毒牙祭壇","毒牙","altar"}},
+  {id=16368,challengeModeID=586,slug="den-of-nalorakk",names={enUS="Den of Nalorakk",zhCN="纳洛拉克的洞穴",zhTW="納羅拉克之穴"},aliases={"Den of Nalorakk","den-of-nalorakk","纳洛拉克的洞穴","納羅拉克之穴","纳洛拉克","納羅拉克","nalorakk"}},
+  {id=9526,challengeModeID=249,slug="kings-rest",names={enUS="Kings' Rest",zhCN="诸王之眠",zhTW="諸王之眠"},aliases={"Kings' Rest","kings-rest","诸王之眠","諸王之眠","诸王","諸王","kingsrest"}},
+  {id=16091,challengeModeID=587,slug="murder-row",names={enUS="Murder Row",zhCN="密谋小径",zhTW="兇殺路"},aliases={"Murder Row","murder-row","密谋小径","兇殺路","密谋","密謀","兇殺","murderrow"}},
+  {id=14063,challengeModeID=399,slug="ruby-life-pools",names={enUS="Ruby Life Pools",zhCN="红玉新生法池",zhTW="晶紅生命之池"},aliases={"Ruby Life Pools","ruby-life-pools","红玉新生法池","晶紅生命之池","红玉","紅玉","晶红","晶紅","rubylifepools"}},
+  {id=9527,challengeModeID=250,slug="temple-of-sethraliss",names={enUS="Temple of Sethraliss",zhCN="塞塔里斯神庙",zhTW="瑟沙利斯神廟"},aliases={"Temple of Sethraliss","temple-of-sethraliss","塞塔里斯神庙","瑟沙利斯神廟","塞塔里斯","瑟沙利斯","sethraliss"}},
+  {id=16359,challengeModeID=584,slug="the-blinding-vale",names={enUS="The Blinding Vale",zhCN="夺目谷",zhTW="盲目谷地"},aliases={"The Blinding Vale","the-blinding-vale","夺目谷","盲目谷地","夺目","奪目","盲目","blindingvale"}},
+  {id=16425,challengeModeID=585,slug="voidscar-arena",names={enUS="Voidscar Arena",zhCN="虚空之痕竞技场",zhTW="虛無之痕競技場"},aliases={"Voidscar Arena","voidscar-arena","虚空之痕竞技场","虛無之痕競技場","虚空之痕","虛空之痕","虛無之痕","voidscar"}},
+}
+manifest.raids={
+  {id=1317,slug="the-tidebound-grotto",names={enUS="The Tidebound Grotto",zhCN="潮缚石窟",zhTW="浪縛岩窟"},aliases={"the-tidebound-grotto","The Tidebound Grotto","Tidebound Grotto","潮缚石窟","潮縛石窟","浪縛岩窟"},bosses={
+    {id=3379,slug="nymrissa-wavecaller",names={enUS="Nymrissa Wavecaller",zhCN="尼姆瑞莎·唤波者",zhTW="妮莉莎‧喚浪者"}},
+  }},
+  {id=1320,slug="the-venomous-abyss",names={enUS="The Venomous Abyss",zhCN="烈毒之渊",zhTW="劇毒深淵"},aliases={"the-venomous-abyss","The Venomous Abyss","Venomous Abyss","烈毒之渊","烈毒之淵","劇毒深淵"},bosses={
+    {id=3470,slug="nekzali-the-soulcoiler",names={enUS="Nek'zali the Soulcoiler",zhCN="盘魂者内克扎莉",zhTW="『纏魂者』尼札利"}},
+    {id=3445,slug="entombed-sentinels",names={enUS="Entombed Sentinels",zhCN="陵寝哨兵",zhTW="埋葬衛哨"}},
+    {id=3497,slug="the-lost-explorers",names={enUS="The Lost Explorers",zhCN="迷失的探险者",zhTW="迷路的探險者"}},
+    {id=3455,slug="vashnik-the-malignant",names={enUS="Vashnik the Malignant",zhCN="万毒邪祟者瓦什尼克",zhTW="『惡性之毒』伐許尼克"}},
+    {id=3420,slug="sszorak",names={enUS="Sszorak",zhCN="斯索拉克",zhTW="司佐拉"}},
+    {id=3421,slug="the-twin-fangs",names={enUS="The Twin Fangs",zhCN="双子毒牙",zhTW="雙生毒牙"}},
+    {id=3429,slug="the-coiled-altar",names={enUS="The Coiled Altar",zhCN="盘卷祭坛",zhTW="盤蛇祭壇"}},
+    {id=3492,slug="ulatek",names={enUS="Ula'tek",zhCN="乌拉特克",zhTW="烏拉特克"}},
+  }},
+}
+
 local ok,reason=API:RegisterDataManifest(manifest)
 if not ok then _G.QFXTalentDataLoadError=reason end

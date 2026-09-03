@@ -55,9 +55,9 @@ def extract_node_choices(payload):
     return sorted(set(choices))
 
 
-def enhanced(samples):
+def enhanced(samples, *args, **kwargs):
     valid = {key: sample for key, sample in samples.items() if isinstance(sample.loadout_text, str) and sample.loadout_text.strip()}
-    result = _original(valid)
+    result = _original(valid, *args, **kwargs)
     ordered = list(valid.values())
     n = len(ordered)
     node_counts = defaultdict(Counter)

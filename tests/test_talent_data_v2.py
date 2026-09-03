@@ -18,6 +18,7 @@ from talent_statistics import (
     pack_statistics_v2,
     unpack_statistics_v2,
 )
+from wcl_talent_export import TalentExporter
 
 
 MODULE_PATH = (
@@ -84,6 +85,7 @@ def test_v2_package_is_four_addons_with_load_on_demand_children(
         "diffs": {4: "Heroic", 5: "Mythic"},
         "dungeons": [{
             "id": 1,
+            "challengeModeID": 777,
             "slug": "dungeon",
             "names": {"enUS": "Dungeon"},
             "aliases": [],
@@ -132,6 +134,7 @@ def test_v2_package_is_four_addons_with_load_on_demand_children(
     assert "GetMinimumDisplayVersion" in core
     common = (output / "Common.lua").read_text(encoding="utf-8")
     assert 'minDisplayVersion="0.5.0"' in common
+    assert "challengeModeID=777" in common
     assert "## X-QFX-Min-Display-Version: 0.5.0" in (
         output / "QFXTalentData.toc"
     ).read_text(encoding="utf-8")
@@ -211,3 +214,113 @@ def test_flat_record_offsets_slice_one_opaque_recommendation():
         assert valid_samples == value.valid_samples
         assert counts == value.counts
         assert recommended == value.recommended
+
+
+def test_current_tree_loadouts_canonicalize_structured_patch_samples():
+    exporter = TalentExporter([{
+        "specId": 577,
+        "fullNodeOrder": [91024],
+        "specNodes": [{
+            "id": 91024,
+            "type": "single",
+            "maxRanks": 1,
+            "entries": [{"id": 112947, "spellId": 388112}],
+        }],
+    }])
+    loadouts, recommended = module.current_tree_loadouts(
+        exporter,
+        577,
+        [{
+            "loadout": "OLD-POSITIONAL-STRING",
+            "talents": [{
+                "node_id": 91024,
+                "entry_id": 117765,
+                "spell_id": 388112,
+                "rank": 1,
+            }],
+        }],
+        "OLD-POSITIONAL-STRING",
+    )
+
+    assert recommended == loadouts[0]
+    assert exporter.decode(recommended, 577) == {91024: (112947, 1)}
+
+
+def test_recommendation_groups_by_spec_and_hero_but_keeps_ranked_class_tree():
+    exporter = TalentExporter([{
+        "specId": 70,
+        "fullNodeOrder": [10, 20, 30],
+        "classNodes": [{
+            "id": 10,
+            "type": "choice",
+            "maxRanks": 1,
+            "entries": [{"id": 100}, {"id": 101}],
+        }],
+        "specNodes": [{
+            "id": 20,
+            "type": "choice",
+            "maxRanks": 1,
+            "entries": [{"id": 200}, {"id": 201}],
+        }],
+        "heroNodes": [{
+            "id": 30,
+            "type": "choice",
+            "maxRanks": 1,
+            "entries": [{"id": 300}, {"id": 301}],
+        }],
+    }])
+    rank_one = exporter.encode(70, {100: 1, 200: 1, 300: 1})
+    rank_five = exporter.encode(70, {101: 1, 201: 1, 301: 1})
+    rank_six = exporter.encode(70, {100: 1, 201: 1, 301: 1})
+
+    loadouts, recommended = module.current_tree_loadouts(
+        exporter,
+        70,
+        [
+            {"loadout": rank_six, "rank": 6},
+            {"loadout": rank_one, "rank": 1},
+            {"loadout": rank_five, "rank": 5},
+        ],
+        rank_one,
+    )
+
+    assert len(loadouts) == 3
+    assert recommended == rank_five
+    assert exporter.decode(recommended, 70) == {
+        10: (101, 1),
+        20: (201, 1),
+        30: (301, 1),
+    }
+
+
+def test_all_unique_spec_hero_groups_choose_highest_ranked_full_loadout():
+    exporter = TalentExporter([{
+        "specId": 70,
+        "fullNodeOrder": [10, 20],
+        "classNodes": [{
+            "id": 10,
+            "type": "choice",
+            "maxRanks": 1,
+            "entries": [{"id": 100}, {"id": 101}],
+        }],
+        "specNodes": [{
+            "id": 20,
+            "type": "choice",
+            "maxRanks": 1,
+            "entries": [{"id": 200}, {"id": 201}],
+        }],
+    }])
+    rank_three = exporter.encode(70, {100: 1, 200: 1})
+    rank_one = exporter.encode(70, {101: 1, 201: 1})
+
+    _, recommended = module.current_tree_loadouts(
+        exporter,
+        70,
+        [
+            {"loadout": rank_three, "rank": 3},
+            {"loadout": rank_one, "rank": 1},
+        ],
+        rank_three,
+    )
+
+    assert recommended == rank_one

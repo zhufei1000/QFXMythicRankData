@@ -83,6 +83,7 @@ class Candidate:
     spec_id: int
     character_key: str
     run_id: int
+    rank: int | None = None
 
 
 @dataclass(frozen=True)
@@ -148,23 +149,39 @@ def iso(value: Any) -> dt.datetime | None:
         return None
 
 
-def active_season(static: dict[str, Any]) -> dict[str, Any]:
-    now = dt.datetime.now(dt.timezone.utc)
-    seasons = static.get("seasons") or []
-    active = []
-    for season in seasons:
-        starts = [x for x in (iso(v) for v in (season.get("starts") or {}).values()) if x]
-        ends = [x for x in (iso(v) for v in (season.get("ends") or {}).values()) if x]
-        if starts and ends and min(starts) <= now <= max(ends):
-            active.append(season)
+def active_season(
+    static: dict[str, Any],
+    now: dt.datetime | None = None,
+    region: str = "world",
+) -> dict[str, Any]:
+    """Select the current main season without depending on API list order."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    candidates: list[tuple[dt.datetime, dt.datetime, dict[str, Any]]] = []
+    for season in static.get("seasons") or []:
+        if not isinstance(season, dict) or not season.get("is_main_season"):
+            continue
+        start_map = season.get("starts") or {}
+        end_map = season.get("ends") or {}
+        if region != "world":
+            starts = [iso(start_map.get(region))]
+            ends = [iso(end_map.get(region))]
+        else:
+            starts = [iso(value) for value in start_map.values()]
+            ends = [iso(value) for value in end_map.values()]
+        starts = [value for value in starts if value]
+        ends = [value for value in ends if value]
+        if starts and ends:
+            candidates.append((min(starts), max(ends), season))
+    if not candidates:
+        raise RuntimeError("No valid main Raider.IO seasons returned")
+
+    active = [value for value in candidates if value[0] <= now < value[1]]
     if active:
-        return sorted(active, key=lambda x: bool(x.get("is_main_season")), reverse=True)[0]
-    mains = [x for x in seasons if x.get("is_main_season")]
-    if mains:
-        return mains[-1]
-    if not seasons:
-        raise RuntimeError("No Raider.IO seasons returned")
-    return seasons[-1]
+        return max(active, key=lambda value: value[0])[2]
+    ended = [value for value in candidates if value[1] <= now]
+    if ended:
+        return max(ended, key=lambda value: value[1])[2]
+    return min(candidates, key=lambda value: value[0])[2]
 
 
 def character_key(character: dict[str, Any]) -> str | None:

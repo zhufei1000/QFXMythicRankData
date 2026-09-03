@@ -16,6 +16,7 @@ import requests
 
 import probe_raiderio_spec_dungeon_v2 as rio_core
 from wcl_talent_export import DEFAULT_TALENTS_URL, TalentExporter, TalentExportError
+from talent_statistics import select_specialization_hero_representative
 
 TOKEN_URL = "https://www.warcraftlogs.com/oauth/token"
 GRAPHQL_URL = "https://www.warcraftlogs.com/api/v2/client"
@@ -456,8 +457,15 @@ def ranked_rows(rows: list[dict[str, Any]]) -> Iterable[dict[str, Any]]:
     return rows
 
 
-def recommendation(samples: dict[str, TalentSample]) -> dict[str, Any]:
-    ordered = list(samples.values())
+def recommendation(
+    samples: dict[str, TalentSample],
+    exporter: TalentExporter | None = None,
+    spec_id: int | None = None,
+) -> dict[str, Any]:
+    ordered = sorted(
+        samples.values(),
+        key=lambda sample: sample.rank if sample.rank is not None else 10**9,
+    )
     n = len(ordered)
     if not ordered:
         return {
@@ -473,16 +481,30 @@ def recommendation(samples: dict[str, TalentSample]) -> dict[str, Any]:
         }
 
     feature_counts = Counter(feature for sample in ordered for feature in sample.features)
-    majority = {feature for feature, count in feature_counts.items() if count * 2 >= n}
     exact_counts = Counter(sample.loadout_text for sample in ordered if sample.loadout_text)
 
-    def score(sample: TalentSample) -> tuple[int, int, int]:
-        distance = len(sample.features.symmetric_difference(majority))
-        exact_support = exact_counts.get(sample.loadout_text, 0)
-        rank = sample.rank if sample.rank is not None else 10**9
-        return distance, -exact_support, rank
-
-    selected = min(ordered, key=score)
+    comparable: list[TalentSample] = []
+    if exporter is not None and spec_id is not None:
+        for sample in ordered:
+            if not sample.loadout_text:
+                continue
+            try:
+                exporter.specialization_hero_signature(sample.loadout_text, spec_id)
+            except TalentExportError:
+                continue
+            comparable.append(sample)
+    if comparable:
+        selected_text = select_specialization_hero_representative(
+            exporter,
+            spec_id,
+            (
+                (sample.loadout_text, sample.rank)
+                for sample in comparable
+            ),
+        )
+        selected = next(sample for sample in comparable if sample.loadout_text == selected_text)
+    else:
+        selected = ordered[0]
     variations = [
         {
             "feature": feature,
@@ -726,7 +748,7 @@ def main() -> int:
         specs_with_import = 0
         minimum = TARGET
         for spec_id in SPEC_NAMES:
-            analysis = recommendation(samples[encounter_id][spec_id])
+            analysis = recommendation(samples[encounter_id][spec_id], talent_exporter, spec_id)
             count = analysis["sample_count"]
             minimum = min(minimum, count)
             if count >= TARGET:
@@ -776,7 +798,7 @@ def main() -> int:
             (value for value in zone.get("partitions") or [] if isinstance(value, dict) and value.get("default")),
             None,
         ),
-        "strategy": "top 10 current-tree-valid ranked characters from public encounter rankings with includeCombatantInfo; representative real sample nearest majority talent features",
+        "strategy": "top 10 current-tree-valid ranked characters from public encounter rankings with includeCombatantInfo; group by identical specialization+hero trees while ignoring the class tree; choose the highest-ranked full loadout from the largest group",
         "target_per_encounter_spec": TARGET,
         "max_pages_per_combo": MAX_PAGES,
         "http_requests": client.requests,

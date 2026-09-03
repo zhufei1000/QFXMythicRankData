@@ -101,6 +101,41 @@ def test_decode_round_trips_selected_entries() -> None:
     }
 
 
+def test_specialization_hero_signature_excludes_class_tree() -> None:
+    exporter = TalentExporter([{
+        "specId": 250,
+        "fullNodeOrder": [10, 20, 30],
+        "classNodes": [{
+            "id": 10,
+            "type": "choice",
+            "maxRanks": 1,
+            "entries": [{"id": 100}, {"id": 101}],
+        }],
+        "specNodes": [{
+            "id": 20,
+            "type": "choice",
+            "maxRanks": 1,
+            "entries": [{"id": 200}, {"id": 201}],
+        }],
+        "heroNodes": [{
+            "id": 30,
+            "type": "choice",
+            "maxRanks": 1,
+            "entries": [{"id": 300}, {"id": 301}],
+        }],
+    }])
+    first = exporter.encode(250, {100: 1, 201: 1, 301: 1})
+    second = exporter.encode(250, {101: 1, 201: 1, 301: 1})
+
+    assert exporter.specialization_hero_signature(first, 250) == (
+        (20, 201, 1),
+        (30, 301, 1),
+    )
+    assert exporter.specialization_hero_signature(first, 250) == (
+        exporter.specialization_hero_signature(second, 250)
+    )
+
+
 def test_decode_resolves_shared_node_omitted_from_spec_group() -> None:
     trees = talent_tree() + [{
         "specId": 251,
@@ -119,3 +154,45 @@ def test_decode_rejects_unconsumed_trailing_bits() -> None:
 
     with pytest.raises(TalentExportError, match="trailing bits"):
         exporter.decode(encoded + "A", 250)
+
+
+def test_node_payload_remaps_removed_choice_by_spell_id() -> None:
+    tree = talent_tree()
+    tree[0]["classNodes"][1] = {
+        "id": 20,
+        "type": "single",
+        "maxRanks": 1,
+        "entries": [{"id": 202, "spellId": 9001}],
+    }
+    exporter = TalentExporter(tree)
+
+    encoded = exporter.encode_node_payload(250, [{
+        "node_id": 20,
+        "entry_id": 201,
+        "spell_id": 9001,
+        "rank": 1,
+    }])
+
+    assert exporter.decode(encoded, 250) == {20: (202, 1)}
+
+
+def test_node_payload_omits_nodes_removed_by_live_patch() -> None:
+    exporter = TalentExporter(talent_tree())
+
+    encoded = exporter.encode_node_payload(250, [
+        {"node_id": 999, "entry_id": 9999, "rank": 1},
+        {"node_id": 20, "entry_id": 200, "rank": 1},
+    ])
+
+    assert exporter.decode(encoded, 250) == {20: (200, 1)}
+
+
+def test_node_payload_omits_removed_choice_without_equivalent_spell() -> None:
+    exporter = TalentExporter(talent_tree())
+
+    encoded = exporter.encode_node_payload(250, [
+        {"node_id": 20, "entry_id": 999, "spell_id": 9999, "rank": 1},
+        {"node_id": 30, "entry_id": 300, "rank": 1},
+    ])
+
+    assert exporter.decode(encoded, 250) == {30: (300, 1)}

@@ -17,6 +17,7 @@ on:
     paths:
       - scripts/collect_mythicplus_talents.py
       - scripts/collect_raid_talents.py
+      - scripts/discover_raid_targets.py
       - scripts/build_talent_data.py
       - scripts/build_talent_data_v2.py
       - scripts/probe_raiderio_spec_dungeon_v2.py
@@ -28,6 +29,7 @@ on:
       - scripts/templates/qfx_talent_data/**
       - tests/test_talent_data.py
       - tests/test_talent_data_v2.py
+      - tests/test_collection_discovery.py
       - tests/test_talent_statistics.py
       - tests/test_wcl_talent_export.py
       - tests/test_talent_curseforge_publish.py
@@ -74,6 +76,7 @@ jobs:
           python -m py_compile \
             scripts/collect_mythicplus_talents.py \
             scripts/collect_raid_talents.py \
+            scripts/discover_raid_targets.py \
             scripts/build_talent_data.py \
             scripts/build_talent_data_v2.py \
             scripts/probe_raiderio_spec_dungeon_v2.py \
@@ -108,61 +111,39 @@ jobs:
           RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
         run: python scripts/collect_mythicplus_talents.py
 
-      - name: Collect original tier Heroic raid talents
+      - name: Discover active raid zones
         env:
           WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
           WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
-          WCL_TARGET: "10"
-          WCL_MAX_PAGES: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_max_pages || '5' }}
-        run: |
-          python scripts/collect_raid_talents.py \
-            --zone 46 \
-            --difficulty 4 \
-            --output artifacts/wcl_tier_heroic.json \
-            --markdown artifacts/wcl_tier_heroic.md \
-            --checkpoint artifacts/wcl_tier_heroic_checkpoint.json
+        run: python scripts/discover_raid_targets.py --output artifacts/wcl_raid_targets.json
 
-      - name: Collect original tier Mythic raid talents
+      - name: Collect active Heroic and Mythic raid talents
+        shell: bash
         env:
           WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
           WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
           WCL_TARGET: "10"
           WCL_MAX_PAGES: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_max_pages || '5' }}
         run: |
-          python scripts/collect_raid_talents.py \
-            --zone 46 \
-            --difficulty 5 \
-            --output artifacts/wcl_tier_mythic.json \
-            --markdown artifacts/wcl_tier_mythic.md \
-            --checkpoint artifacts/wcl_tier_mythic_checkpoint.json
-
-      - name: Collect Sporefall Heroic Rotmire talents
-        env:
-          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
-          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
-          WCL_TARGET: "10"
-          WCL_MAX_PAGES: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_max_pages || '5' }}
-        run: |
-          python scripts/collect_raid_talents.py \
-            --zone 50 \
-            --difficulty 4 \
-            --output artifacts/wcl_sporefall_heroic.json \
-            --markdown artifacts/wcl_sporefall_heroic.md \
-            --checkpoint artifacts/wcl_sporefall_heroic_checkpoint.json
-
-      - name: Collect Sporefall Mythic Rotmire talents
-        env:
-          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
-          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
-          WCL_TARGET: "10"
-          WCL_MAX_PAGES: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_max_pages || '5' }}
-        run: |
-          python scripts/collect_raid_talents.py \
-            --zone 50 \
-            --difficulty 5 \
-            --output artifacts/wcl_sporefall_mythic.json \
-            --markdown artifacts/wcl_sporefall_mythic.md \
-            --checkpoint artifacts/wcl_sporefall_mythic_checkpoint.json
+          set -euo pipefail
+          python - <<'PY' > artifacts/wcl_raid_targets.tsv
+          import json
+          import pathlib
+          payload = json.loads(pathlib.Path("artifacts/wcl_raid_targets.json").read_text())
+          for target in payload["targets"]:
+              print(f'{target["zone_id"]}\t{target["slug"]}')
+          PY
+          while IFS=$'\t' read -r zone slug; do
+            for difficulty in 4 5; do
+              stem="artifacts/wcl_raid_${zone}_${difficulty}"
+              python scripts/collect_raid_talents.py \
+                --zone "${zone}" \
+                --difficulty "${difficulty}" \
+                --output "${stem}.json" \
+                --markdown "${stem}.md" \
+                --checkpoint "${stem}_checkpoint.json"
+            done
+          done < artifacts/wcl_raid_targets.tsv
 
       - name: Generate split load-on-demand QFXTalentData addons
         id: package
@@ -176,11 +157,7 @@ jobs:
             QFXTalentData_RaidMythic
           python -c "import pathlib, sys; sys.path.insert(0, 'scripts'); from wcl_talent_export import TalentExporter; TalentExporter.download(cache_path=pathlib.Path('artifacts/raidbots_talents_live.json'))"
           raid_args=()
-          for file in \
-            artifacts/wcl_tier_heroic.json \
-            artifacts/wcl_tier_mythic.json \
-            artifacts/wcl_sporefall_heroic.json \
-            artifacts/wcl_sporefall_mythic.json; do
+          for file in artifacts/wcl_raid_*_[45].json; do
             if [[ -f "${file}" ]]; then
               raid_args+=(--raid-input "${file}")
             fi
@@ -206,6 +183,7 @@ jobs:
           python -m pytest -q \
             tests/test_talent_data.py \
             tests/test_talent_data_v2.py \
+            tests/test_collection_discovery.py \
             tests/test_talent_statistics.py \
             tests/test_wcl_talent_export.py \
             tests/test_talent_curseforge_publish.py
@@ -235,8 +213,8 @@ jobs:
             ! grep -q 'samples' "${addon}/Data.lua"
           done
           test "$(unzip -Z1 "${{ steps.package.outputs.path }}" | grep -c -E '^[^/]+/[^/]+$')" -eq 12
-          grep -q 'slug="sporefall"' QFXTalentData/Common.lua
-          grep -q 'id=3159' QFXTalentData/Common.lua
+          test -s artifacts/wcl_raid_targets.json
+          grep -q 'raids={' QFXTalentData/Common.lua
 
       - name: Publish summary
         if: always()
@@ -245,7 +223,7 @@ jobs:
           if [[ -f artifacts/raiderio_mainstream_talents_v4.md ]]; then
             cat artifacts/raiderio_mainstream_talents_v4.md >> "${GITHUB_STEP_SUMMARY}"
           fi
-          for file in artifacts/wcl_tier_heroic.md artifacts/wcl_tier_mythic.md artifacts/wcl_sporefall_heroic.md artifacts/wcl_sporefall_mythic.md; do
+          for file in artifacts/wcl_raid_*_[45].md; do
             if [[ -f "${file}" ]]; then
               printf '\n' >> "${GITHUB_STEP_SUMMARY}"
               cat "${file}" >> "${GITHUB_STEP_SUMMARY}"
@@ -351,13 +329,8 @@ jobs:
             artifacts/raiderio_mainstream_talents_v4.json
             artifacts/raiderio_mainstream_talents_v4.md
             artifacts/raidbots_talents_live.json
-            artifacts/wcl_tier_heroic.json
-            artifacts/wcl_tier_heroic.md
-            artifacts/wcl_tier_mythic.json
-            artifacts/wcl_tier_mythic.md
-            artifacts/wcl_sporefall_heroic.json
-            artifacts/wcl_sporefall_heroic.md
-            artifacts/wcl_sporefall_mythic.json
-            artifacts/wcl_sporefall_mythic.md
+            artifacts/wcl_raid_targets.json
+            artifacts/wcl_raid_*_[45].json
+            artifacts/wcl_raid_*_[45].md
           if-no-files-found: warn
           retention-days: 30

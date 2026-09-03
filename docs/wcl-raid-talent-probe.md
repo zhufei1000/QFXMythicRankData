@@ -13,28 +13,22 @@ The probe uses the public `/api/v2/client` GraphQL endpoint and OAuth client cre
 
 ## Outputs
 
-The WCL job uploads an Artifact named:
+The collection produces:
 
-```text
-wcl-raid-talents-v1-<github-run-id>
-```
-
-Its main files are:
-
-- `wcl_raid_talents_v1.json`
-- `wcl_raid_talents_v1.md`
-- `wcl_raid_talents_checkpoint_v1.json` when a run is interrupted
-
-The Raider.IO job continues to upload its existing independent Artifact.
+- `wcl_raid_targets.json` with the active Raider.IO raids and matched WCL zones.
+- `wcl_raid_<zone-id>_<difficulty-id>.json` and `.md` for each discovered zone and difficulty.
+- `wcl_raid_<zone-id>_<difficulty-id>_checkpoint.json` while a collection is in progress.
+- The independent Raider.IO Mythic+ sample files and generated addon package. Final JSON/Markdown results and the target manifest are uploaded in the combined talent-data Artifact.
 
 ## Selection strategy
 
-- Auto-detect the highest-ID unfrozen WCL zone that has Mythic difficulty and at least two encounters.
-- The manual workflow can override the zone and difficulty IDs.
+- Read Raider.IO raid start/end windows and select every raid in the active season group.
+- Match those raids to unfrozen WCL zones by normalized encounter names; fail closed if an active raid cannot be matched.
+- Run both Heroic and Mythic collection for every discovered zone. Direct collector calls can still override zone and difficulty IDs.
 - Query public encounter character rankings per class/spec with `includeCombatantInfo: true`.
 - Spread samples across the ranking page instead of taking only adjacent ranks.
 - Keep at most ten unique valid samples per encounter/spec by default.
-- Select an actual WCL sample closest to the majority structured talent features.
+- Group samples by identical specialization and hero trees while ignoring the general class tree, then select the highest-ranked complete loadout from the largest group.
 - Preserve any import/export string exposed by WCL; otherwise retain the structured talent payload for schema analysis.
 
 This is a coverage probe. It deliberately records response-shape diagnostics because Warcraft Logs returns ranking and combatant information through JSON scalar fields whose internal shape is not part of the typed GraphQL schema.
