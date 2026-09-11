@@ -107,7 +107,7 @@ API:RegisterRegion("eu", {
             color = "#0070dd",
             colors = {
                 all = "#0070dd",
-                horde = "#1973da",
+                horde = "#1a73da",
                 alliance = "#2e6ddf",
             },
             all = {
@@ -131,11 +131,11 @@ API:RegisterRegion("eu", {
         },
         p600 = {
             quantile = 0.6,
-            color = "#4183c9",
+            color = "#4283c8",
             colors = {
-                all = "#4183c9",
-                horde = "#4686c5",
-                alliance = "#4183c9",
+                all = "#4283c8",
+                horde = "#4687c5",
+                alliance = "#4283c8",
             },
             all = {
                 score = 2618.64,
@@ -269,11 +269,11 @@ API:RegisterRegion("eu", {
         keystoneHero = {
             thresholdScore = 2500,
             quantile = 0.555,
-            color = "#5293b8",
+            color = "#5394b7",
             colors = {
-                all = "#5293b8",
-                horde = "#5293b8",
-                alliance = "#5293b8",
+                all = "#5394b7",
+                horde = "#5394b7",
+                alliance = "#5394b7",
             },
             all = {
                 score = 2499.72,
@@ -297,11 +297,11 @@ API:RegisterRegion("eu", {
         keystoneMaster = {
             thresholdScore = 2000,
             quantile = 0.429,
-            color = "#56d966",
+            color = "#55dc62",
             colors = {
-                all = "#56d966",
-                horde = "#56d966",
-                alliance = "#56d966",
+                all = "#55dc62",
+                horde = "#55dc62",
+                alliance = "#55dc62",
             },
             all = {
                 score = 1997.12,
@@ -325,11 +325,11 @@ API:RegisterRegion("eu", {
         keystoneConqueror = {
             thresholdScore = 1500,
             quantile = 0.355,
-            color = "#6aff4e",
+            color = "#6eff51",
             colors = {
-                all = "#6aff4e",
-                horde = "#6aff4e",
-                alliance = "#6aff4e",
+                all = "#6eff51",
+                horde = "#6eff51",
+                alliance = "#6eff51",
             },
             all = {
                 score = 1495.83,
@@ -353,11 +353,11 @@ API:RegisterRegion("eu", {
         keystoneExplorer = {
             thresholdScore = 1000,
             quantile = 0.274,
-            color = "#b1ff99",
+            color = "#b3ff9b",
             colors = {
-                all = "#b1ff99",
-                horde = "#b1ff99",
-                alliance = "#b1ff99",
+                all = "#b3ff9b",
+                horde = "#b3ff9b",
+                alliance = "#b3ff9b",
             },
             all = {
                 score = 998.82,
@@ -1675,7 +1675,7 @@ API:RegisterRegion("eu", {
         },
     },
     sourceUpdatedAt = "Fri Sep 11 2026 06:36:30 GMT+0000 (Coordinated Universal Time)",
-    checkedAt = "2026-09-11T07:13:39Z",
-    publishedAt = "2026-09-11T07:13:39Z",
-    packageVersion = "202609110713",
+    checkedAt = "2026-09-11T17:46:29Z",
+    publishedAt = "2026-09-11T17:46:29Z",
+    packageVersion = "202609111746",
 })
