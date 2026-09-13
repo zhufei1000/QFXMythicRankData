@@ -1729,7 +1729,7 @@ API:RegisterRegion("eu", {
         },
     },
     sourceUpdatedAt = "Sun Sep 13 2026 06:18:43 GMT+0000 (Coordinated Universal Time)",
-    checkedAt = "2026-09-13T07:24:33Z",
-    publishedAt = "2026-09-13T07:24:33Z",
-    packageVersion = "202609130724",
+    checkedAt = "2026-09-13T17:25:22Z",
+    publishedAt = "2026-09-13T17:25:22Z",
+    packageVersion = "202609131725",
 })
