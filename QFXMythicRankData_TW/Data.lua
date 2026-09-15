@@ -1754,7 +1754,7 @@ API:RegisterRegion("tw", {
         },
     },
     sourceUpdatedAt = "Mon Sep 14 2026 21:34:55 GMT+0000 (Coordinated Universal Time)",
-    checkedAt = "2026-09-14T23:00:36Z",
-    publishedAt = "2026-09-14T23:00:36Z",
-    packageVersion = "202609142300",
+    checkedAt = "2026-09-15T13:29:53Z",
+    publishedAt = "2026-09-15T13:29:53Z",
+    packageVersion = "202609151329",
 })
