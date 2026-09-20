@@ -1812,7 +1812,7 @@ API:RegisterRegion("kr", {
         },
     },
     sourceUpdatedAt = "Sun Sep 20 2026 10:02:50 GMT+0000 (Coordinated Universal Time)",
-    checkedAt = "2026-09-20T12:23:41Z",
-    publishedAt = "2026-09-20T12:23:41Z",
-    packageVersion = "202609201223",
+    checkedAt = "2026-09-20T21:19:44Z",
+    publishedAt = "2026-09-20T21:19:44Z",
+    packageVersion = "202609202119",
 })
