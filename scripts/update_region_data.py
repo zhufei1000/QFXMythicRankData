@@ -14,7 +14,7 @@ import sys
 import tempfile
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 import requests
 
@@ -28,6 +28,7 @@ from region_config import SUPPORTED_REGIONS, data_path, toc_path
 STATIC_DATA_URL = "https://raider.io/api/v1/mythic-plus/static-data"
 CUTOFFS_URL = "https://raider.io/api/v1/mythic-plus/season-cutoffs"
 SCORE_TIERS_URL = "https://raider.io/api/v1/mythic-plus/score-tiers"
+CHARACTER_RANKINGS_URL = "https://raider.io/api/mythic-plus/rankings/characters"
 DEFAULT_EXPANSION_ID = 11
 REQUIRED_KEYS = ("p999", "p990", "p900", "p750", "p600")
 ACHIEVEMENT_KEYS = (
@@ -1040,6 +1041,86 @@ def normalize_bracket_levels(value: Any) -> list[int]:
     return sorted(levels)
 
 
+def fetch_top_scores(
+    region: str,
+    season: str,
+    top_rank: int,
+    timeout: int,
+    on_request: Callable[[], None] | None = None,
+    top_characters: list[dict[str, Any]] | None = None,
+    complete_boundary: bool = False,
+) -> list[int]:
+    """Collect regional scores and optionally the first 100 character identities."""
+    if top_rank < 1:
+        raise ValueError("top rank must be positive")
+    scores: list[int] = []
+    page = 0
+    page_size: int | None = None
+    previous_score = math.inf
+    target_rank = max(top_rank, 100) if top_characters is not None else top_rank
+    while (len(scores) < target_rank
+           or (complete_boundary and len(scores) >= top_rank
+               and scores[-1] == scores[top_rank - 1])):
+        if on_request is not None:
+            on_request()
+        response = requests.get(
+            CHARACTER_RANKINGS_URL,
+            params={"region": region, "season": season, "class": "all", "role": "all", "page": page},
+            headers={"Accept": "application/json", "User-Agent": "QFXMythicRankData/2.0 (+https://raider.io)"},
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        rankings = payload.get("rankings") if isinstance(payload, dict) else None
+        ui = rankings.get("ui") if isinstance(rankings, dict) else None
+        entries = rankings.get("rankedCharacters") if isinstance(rankings, dict) else None
+        if not isinstance(ui, dict) or not isinstance(entries, list) or not entries:
+            raise ValueError(f"rankings page {page} is incomplete")
+        if any(ui.get(key) != value for key, value in
+               (("region", region), ("season", season), ("class", "all"), ("role", "all"), ("page", page))):
+            raise ValueError(f"rankings page {page} has mismatched metadata")
+        actual_page_size = ui.get("pageSize")
+        if not isinstance(actual_page_size, int) or actual_page_size < 1:
+            raise ValueError(f"rankings page {page} has invalid page size")
+        if page_size is None:
+            page_size = actual_page_size
+        elif page_size != actual_page_size:
+            raise ValueError("rankings page size changed during collection")
+        if len(entries) != page_size and len(scores) + len(entries) < target_rank:
+            raise ValueError(f"rankings page {page} ended before the requested rank")
+        for entry in entries:
+            expected_rank = len(scores) + 1
+            if not isinstance(entry, dict) or entry.get("rank") != expected_rank:
+                raise ValueError(f"rankings page {page} skips or repeats rank {expected_rank}")
+            raw_score = as_number(entry.get("score"), f"rankings[{expected_rank}].score")
+            if raw_score < 0 or raw_score > previous_score:
+                raise ValueError(f"rankings page {page} is not sorted by score")
+            rounded_score = math.floor(raw_score + 0.5)
+            scores.append(rounded_score)
+            if top_characters is not None and expected_rank <= 100:
+                character = entry.get("character")
+                realm = character.get("realm") if isinstance(character, dict) else None
+                name = character.get("name") if isinstance(character, dict) else None
+                realm_id = realm.get("wowRealmId") if isinstance(realm, dict) else None
+                if (isinstance(name, str) and name.strip()
+                        and isinstance(realm_id, int) and not isinstance(realm_id, bool)
+                        and realm_id > 0):
+                    top_characters.append({
+                        "rank": expected_rank,
+                        "name": name,
+                        "realmID": realm_id,
+                    })
+            previous_score = raw_score
+        page += 1
+        time.sleep(0.4)
+    if complete_boundary:
+        end_rank = top_rank
+        while end_rank < len(scores) and scores[end_rank] == scores[top_rank - 1]:
+            end_rank += 1
+        return scores[:end_rank]
+    return scores[:top_rank]
+
+
 def build_ready_region_data(
     payload: dict[str, Any],
     region: str,
@@ -1469,6 +1550,17 @@ def update_region(
                     static_payload,
                     score_tiers_payload,
                 )
+                try:
+                    top_rank = data["cutoffs"]["p990"]["all"]["rank"]
+                    top_characters: list[dict[str, Any]] = []
+                    data["topScores"] = fetch_top_scores(
+                        region, resolved_season, top_rank, timeout,
+                        top_characters=top_characters,
+                        complete_boundary=True,
+                    )
+                    data["topCharacters"] = top_characters
+                except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
+                    print(f"WARNING [{region}]: top score collection unavailable: {exc}", file=sys.stderr)
             else:
                 data = build_empty_region_data(
                     region,

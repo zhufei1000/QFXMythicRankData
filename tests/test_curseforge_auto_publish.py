@@ -123,7 +123,7 @@ def test_configure_publisher_sets_runtime_metadata(
     assert publish.SOURCE_COMMIT == "a" * 40
 
 
-def test_scheduled_regional_workflows_run_twice_and_publish_independently() -> None:
+def test_scheduled_regional_workflows_run_once_at_local_0618() -> None:
     timezones = {
         "cn": "Asia/Shanghai",
         "eu": "Europe/Paris",
@@ -135,10 +135,9 @@ def test_scheduled_regional_workflows_run_twice_and_publish_independently() -> N
         workflow = (
             ROOT / f".github/workflows/update-regional-data-{region}.yml"
         ).read_text(encoding="utf-8")
-        assert workflow.count("cron:") == 2
-        assert 'cron: "4 4 * * *"' in workflow
-        assert 'cron: "16 16 * * *"' in workflow
-        assert workflow.count(f'timezone: "{timezones[region]}"') == 2
+        assert workflow.count("cron:") == 1
+        assert 'cron: "18 6 * * *"' in workflow
+        assert workflow.count(f'timezone: "{timezones[region]}"') == 1
         assert "uses: ./.github/workflows/region-update-shared.yml" in workflow
         assert f"region: {region.upper()}" in workflow
         assert "permissions:\n  contents: write" in workflow
@@ -153,6 +152,22 @@ def test_scheduled_regional_workflows_run_twice_and_publish_independently() -> N
         "Push published ${{ inputs.region }} data to main"
     )
     assert "group: regional-publish-${{ inputs.region }}" in shared
+
+
+def test_manual_workflow_only_publishes_changed_regions() -> None:
+    workflow = (ROOT / ".github/workflows/update-regional-data.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "workflow_dispatch:" in workflow
+    assert "schedule:" not in workflow
+    assert "steps.changes.outputs.changed_regions" in workflow
+    assert "steps.publish_scope.outputs.regions" in workflow
+    assert workflow.count('--regions "${args[@]}"') == 3
+    assert "CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}" in workflow
+    assert workflow.index("Upload changed regional packages to CurseForge") < workflow.index(
+        "Push published regional data to main"
+    )
+    assert "group: curseforge-regional-publish" in workflow
 
 
 def test_pr_validation_workflow_is_fixed_and_read_only() -> None:

@@ -14,7 +14,7 @@ The addons contain no display UI, frames, events, timers, `OnUpdate` handlers, s
 
 ## Data and attribution
 
-Data comes from the public [Raider.IO](https://raider.io) Mythic+ `static-data`, `season-cutoffs`, and `score-tiers` API endpoints. The updater selects the active main season independently for each region, validates the complete response, and atomically replaces only that region's known-good data.
+Data comes from the public [Raider.IO](https://raider.io) Mythic+ `static-data`, `season-cutoffs`, `score-tiers`, and the paginated `rankings/characters` endpoint. The updater selects the active main season independently for each region, validates the complete response, and atomically replaces only that region's known-good data.
 
 Each region has an independent database state:
 
@@ -27,6 +27,8 @@ Completely missing cutoff nodes are accepted as `collecting` only during the fir
 Schema Version 2 stores normalized source data for:
 
 - the five percentile score cutoffs (`p999`, `p990`, `p900`, `p750`, and `p600`)
+- when collection succeeds, the rounded integer score at each all-faction regional rank through the Top 1% boundary (`topScores`), including any remaining ranks sharing the boundary's rounded score; an incomplete collection is omitted
+- for the first 100 leaderboard ranks, a compact character name, WoW realm ID, and rank (`topCharacters`); anonymous rows without a realm ID are omitted
 - Mythic+ achievement score cutoffs
 - Raider.IO's source history points from the most recent 30 days
 - all-faction, Horde, and Alliance regional populations and cutoff colors
@@ -38,9 +40,11 @@ Schema Version 2 stores normalized source data for:
 - separate source, collection, publication, and package-version timestamps so
   consumers can distinguish stale upstream data from a delayed updater
 
-The regional rank packages contain no player names, realms, full leaderboard, dungeon-run members, equipment, talents, class statistics, or current affix schedule. Historical points are stored exactly as normalized source points: the database does not calculate daily changes, faction ratios, cross-region comparisons, or display results.
+Apart from the first 100 leaderboard identities, the regional rank packages contain no player names, realms, character identities, dungeon-run members, equipment, talents, class statistics, or current affix schedule. Historical points are stored exactly as normalized source points: the database does not calculate daily changes, faction ratios, cross-region comparisons, or display results.
 
-Rank results are estimates derived from published percentile score cutoffs. They are not exact character leaderboard positions and should always be presented as estimates.
+Rank results are generally estimates derived from published percentile score cutoffs. A complete Top 1% score snapshot also supports approximate rank lookup after both the leaderboard score and the in-game score are rounded to integers. Characters sharing a rounded score receive the middle rank of that score group and a plus/minus uncertainty covering its rank range; this is not an exact character leaderboard position.
+
+`EstimatePlayerRank` returns the listed rank for a Top 100 character when the current player's name and WoW realm ID match the same leaderboard snapshot row. The listed rank describes that snapshot and may lag the player's current score; otherwise it falls back to the rounded-score or cutoff estimate.
 
 ## Installation
 
@@ -81,6 +85,9 @@ The compatible API methods are:
 - `GetBracketDungeonLevels(region)`
 - `GetPlayerScore()`
 - `EstimateRank(region, score, faction)`
+- `GetRoundedTopRank(region, score)` — first and last rank sharing the rounded score, when the all-faction Top 1% snapshot is available
+- `GetCharacterTopRank(region, name, realmID)` — snapshot rank for a named Top 100 character on the matching WoW realm; intended for safe tooltip lookups
+- `GetExactPlayerTopRank(region)` — rank of the current player in the Top 100 snapshot when name and WoW realm ID match
 - `EstimatePlayerRank(region, faction)`
 - `RegisterCallback(owner, callback)`
 - `UnregisterCallback(callback)`
@@ -144,8 +151,8 @@ The talent pipeline uses `RAIDERIO_ACCESS_KEY` when available and requires `WCL_
 
 ## Automation and packages
 
-Each regional `Update Regional Mythic Rank Data` workflow runs at 04:04 and 16:16 in that region's local time and can be started manually. The schedules use IANA time zones, so US and EU runs follow daylight-saving changes automatically. Every successful check receives a distinct package version while `dataVersion` and `sourceUpdatedAt` continue to identify the Raider.IO source snapshot.
+The five regional `Update Regional Mythic Rank Data` workflows each start once daily at 06:18 in their region's local time (CN: Shanghai, TW: Taipei, KR: Seoul, US: New York, EU: Paris). US and EU schedules follow daylight saving time. Collection, validation, and publishing finish after the scheduled start; the separate `Update Regional Mythic Rank Data` full run remains available manually. Every successful check receives a distinct package version while `dataVersion` and `sourceUpdatedAt` continue to identify the Raider.IO source snapshot.
 
 The `Update QFX Talent Data` workflow runs twice daily. It requires all Raider.IO, Warcraft Logs, and CurseForge credentials before collection begins; a missing credential stops the run instead of publishing an incomplete database. It collects global Mythic+ samples plus Heroic and Mythic raid samples, generates the base addon and three load-on-demand content addons in one installable archive, validates every Lua file with Lua 5.1, verifies display-version compatibility, and publishes changed data to CurseForge project `1627870` before committing it to `main`. A failed upload leaves `main` unchanged so the next scheduled run can retry safely.
 
-Every validated regional check is packaged and passed to its CurseForge publishing step, then committed to `main` only after upload succeeds. The separate read-only `Validate Pull Request` workflow runs tests, Lua 5.1 validation, and regional package builds without contacting Raider.IO, Warcraft Logs, or CurseForge.
+Only regional rank packages with publishable changes are built and passed to their validated CurseForge publishing step, then committed to `main` only after upload succeeds. The separate read-only `Validate Pull Request` workflow runs tests, Lua 5.1 validation, and regional package builds without contacting Raider.IO, Warcraft Logs, or CurseForge.

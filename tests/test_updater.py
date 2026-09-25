@@ -19,6 +19,102 @@ import update_region_data as updater
 from region_config import REGIONS, SUPPORTED_REGIONS
 
 
+def test_top_score_collection_rounds_and_requires_contiguous_ranks(monkeypatch):
+    pages = [
+        [{"rank": 1, "score": 4452.90}, {"rank": 2, "score": 4452.50}],
+        [{"rank": 3, "score": 4451.51}, {"rank": 4, "score": 4451.49}],
+    ]
+
+    class Response:
+        def __init__(self, page):
+            self.page = page
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"rankings": {"ui": {"region": "cn", "season": "season-mn-1",
+                    "class": "all", "role": "all", "page": self.page, "pageSize": 2},
+                    "rankedCharacters": pages[self.page]}}
+
+    monkeypatch.setattr(updater.requests, "get", lambda _url, params, **_kwargs: Response(params["page"]))
+    monkeypatch.setattr(updater.time, "sleep", lambda _seconds: None)
+    assert updater.fetch_top_scores("cn", "season-mn-1", 4, 10) == [4453, 4453, 4452, 4451]
+    pages[1][0]["rank"] = 2
+    with pytest.raises(ValueError, match="skips or repeats"):
+        updater.fetch_top_scores("cn", "season-mn-1", 4, 10)
+
+
+def test_top_character_collection_uses_first_page_and_skips_anonymous(monkeypatch):
+    entries = [
+        {"rank": rank, "score": 4500 - rank / 10,
+         "character": {"name": f"Hero{rank}",
+                       "realm": {"wowRealmId": 707} if rank != 2 else {"anonymized": True}}}
+        for rank in range(1, 101)
+    ]
+    requested_pages = []
+
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"rankings": {"ui": {"region": "tw", "season": "season-mn-2",
+                    "class": "all", "role": "all", "page": 0, "pageSize": 100},
+                    "rankedCharacters": entries}}
+
+    def fake_get(_url, params, **_kwargs):
+        requested_pages.append(params["page"])
+        return Response()
+
+    monkeypatch.setattr(updater.requests, "get", fake_get)
+    monkeypatch.setattr(updater.time, "sleep", lambda _seconds: None)
+    characters = []
+    scores = updater.fetch_top_scores("tw", "season-mn-2", 28, 10,
+                                     top_characters=characters)
+    assert requested_pages == [0]
+    assert len(scores) == 28
+    assert len(characters) == 99
+    assert characters[0] == {"rank": 1, "name": "Hero1", "realmID": 707}
+    assert all(character["rank"] != 2 for character in characters)
+    assert characters[-1]["rank"] == 100
+
+
+def test_top_score_collection_completes_rounded_boundary_group(monkeypatch):
+    pages = [
+        [4500, 4499],
+        [4499, 4499],
+        [4498, 4497],
+    ]
+    requested_pages = []
+
+    class Response:
+        def __init__(self, page):
+            self.page = page
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"rankings": {"ui": {"region": "cn", "season": "season-mn-2",
+                    "class": "all", "role": "all", "page": self.page, "pageSize": 2},
+                    "rankedCharacters": [
+                        {"rank": self.page * 2 + index + 1, "score": score}
+                        for index, score in enumerate(pages[self.page])
+                    ]}}
+
+    def fake_get(_url, params, **_kwargs):
+        requested_pages.append(params["page"])
+        return Response(params["page"])
+
+    monkeypatch.setattr(updater.requests, "get", fake_get)
+    monkeypatch.setattr(updater.time, "sleep", lambda _seconds: None)
+    scores = updater.fetch_top_scores("cn", "season-mn-2", 2, 10,
+                                     complete_boundary=True)
+    assert scores == [4500, 4499, 4499, 4499]
+    assert requested_pages == [0, 1, 2]
+
+
 FIXTURES = ROOT / "tests" / "fixtures"
 
 
@@ -454,6 +550,7 @@ def test_all_region_update_continues_after_one_failure(
         return fake_write_result(region)
 
     monkeypatch.setattr(update_all_regions, "fetch_cutoff_payload", fake_cutoff)
+    monkeypatch.setattr(update_all_regions, "fetch_top_scores", lambda *_args: [4500])
     monkeypatch.setattr(update_all_regions, "write_region_data", fake_write)
     summary = update_all_regions.run_updates(list(SUPPORTED_REGIONS))
     assert writes == [region for region in SUPPORTED_REGIONS if region != "eu"]
@@ -484,6 +581,7 @@ def test_all_region_update_fetches_shared_sources_once_per_season(
     monkeypatch.setattr(update_all_regions, "fetch_static_data", fake_static)
     monkeypatch.setattr(update_all_regions, "fetch_score_tiers", fake_tiers)
     monkeypatch.setattr(update_all_regions, "fetch_cutoff_payload", fake_cutoff)
+    monkeypatch.setattr(update_all_regions, "fetch_top_scores", lambda *_args: [4500])
     monkeypatch.setattr(
         update_all_regions,
         "write_region_data",
@@ -527,6 +625,7 @@ def test_invalid_shared_score_tiers_stop_ready_regions_before_write(
         "staticData": 1,
         "scoreTiers": 1,
         "seasonCutoffs": 5,
+        "characterRankings": 0,
         "total": 7,
     }
 
@@ -1016,6 +1115,7 @@ def configure_update_orchestration(
         return load_named_fixture("score_tiers.json")
 
     monkeypatch.setattr(update_all_regions, "fetch_score_tiers", fake_tiers)
+    monkeypatch.setattr(update_all_regions, "fetch_top_scores", lambda *_args: [4500])
     monkeypatch.setattr(
         update_all_regions,
         "write_region_data",
@@ -1070,6 +1170,7 @@ def test_invalid_shared_main_season_metadata_stops_before_any_write(
         "staticData": 1,
         "scoreTiers": 0,
         "seasonCutoffs": 0,
+        "characterRankings": 0,
         "total": 1,
     }
 

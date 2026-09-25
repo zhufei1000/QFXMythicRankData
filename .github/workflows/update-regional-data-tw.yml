@@ -2,9 +2,8 @@ name: Update TW Regional Data
 
 on:
   schedule:
-    - cron: "4 4 * * *"
-      timezone: "Asia/Taipei"
-    - cron: "16 16 * * *"
+    # Run once daily at 06:18 regional local time.
+    - cron: "18 6 * * *"
       timezone: "Asia/Taipei"
   workflow_dispatch:
     inputs:

@@ -289,9 +289,77 @@ function API:GetPlayerScore()
     return nil
 end
 
--- Estimates a regional rank from the fixed Raider.IO percentile cutoff points.
--- The estimate is deliberately accompanied by a rank range because the data
--- source does not provide a complete character leaderboard.
+-- The score-only leaderboard cannot distinguish characters that share a
+-- rounded score. Return the first and last rank in that score group.
+function API:GetRoundedTopRank(region, score)
+    local data = self:GetRegionData(region)
+    local scores = data and data.topScores
+    if type(scores) ~= "table" or type(score) ~= "number" or #scores < 1 then
+        return nil
+    end
+    local rounded = Round(score)
+    if rounded < scores[#scores] then
+        return nil
+    end
+    local left, right = 1, #scores
+    while left < right do
+        local middle = math.floor((left + right) / 2)
+        if scores[middle] <= rounded then
+            right = middle
+        else
+            left = middle + 1
+        end
+    end
+    local first = left
+    if scores[first] ~= rounded then
+        return first, first
+    end
+    left, right = first, #scores
+    while left < right do
+        local middle = math.floor((left + right + 1) / 2)
+        if scores[middle] == rounded then
+            left = middle
+        else
+            right = middle - 1
+        end
+    end
+    return first, left
+end
+
+-- Match a character's name and realm ID to the latest Top 100 snapshot.
+-- Anonymous rows have no realm ID and cannot be matched.
+function API:GetCharacterTopRank(region, name, realmID)
+    local data = self:GetRegionData(region)
+    local characters = data and data.topCharacters
+    if not self:IsRegionAvailable(region)
+        or type(characters) ~= "table"
+        or type(name) ~= "string" or name == ""
+        or type(realmID) ~= "number"
+    then
+        return nil
+    end
+    for _, character in ipairs(characters) do
+        if character.name == name and character.realmID == realmID then
+            return character.rank
+        end
+    end
+    return nil
+end
+
+function API:GetExactPlayerTopRank(region)
+    if type(UnitFullName) ~= "function" or type(GetRealmID) ~= "function" then
+        return nil
+    end
+    local name = UnitFullName("player")
+    local realmID = GetRealmID()
+    if type(name) ~= "string" or type(realmID) ~= "number" then
+        return nil
+    end
+    return self:GetCharacterTopRank(region, name, realmID)
+end
+
+-- Estimates a regional rank from rounded Top 1% scores when available, or
+-- from the fixed Raider.IO percentile cutoff points.
 function API:EstimateRank(region, score, faction)
     if type(score) ~= "number" then
         return nil, "invalid score"
@@ -310,7 +378,32 @@ function API:EstimateRank(region, score, faction)
     local population = tonumber(points[#points].population)
         or tonumber(data.population)
 
-    -- Above the top 0.1% line: only a range can be claimed honestly.
+    -- Use the middle of a rounded score group and retain its full rank range.
+    -- Without the snapshot, percentile cutoffs provide the broad fallback.
+    local topRank, tiedThrough
+    if NormalizeFaction(faction) == "all" then
+        topRank, tiedThrough = self:GetRoundedTopRank(region, score)
+    end
+    if topRank then
+        local middleRank = Round((topRank + tiedThrough) / 2)
+        return {
+            region = NormalizeRegion(region),
+            score = score,
+            faction = "all",
+            bracket = middleRank > (tonumber(points[1].rank) or 0) and points[2]
+                and points[1].key .. "-" .. points[2].key or points[1].key,
+            rankMin = topRank,
+            rankMax = tiedThrough,
+            estimatedRank = middleRank,
+            rankUncertainty = math.ceil((tiedThrough - topRank) / 2),
+            percentileMin = (topRank - 1) / population * 100,
+            percentileMax = tiedThrough / population * 100,
+            isEstimate = true,
+            isRoundedLeaderboardRank = true,
+            isRoundedTie = tiedThrough > topRank,
+            updatedAt = data.updatedAt,
+        }
+    end
     if score >= points[1].score then
         local maxRank = math.max(1, tonumber(points[1].rank) or 1)
         return {
@@ -395,7 +488,25 @@ function API:EstimatePlayerRank(region, faction)
     end
 
     region = region or self:GetCurrentRegion()
-    return self:EstimateRank(region, score, faction)
+    local result, err = self:EstimateRank(region, score, faction)
+    if not result or NormalizeFaction(faction) ~= "all" then
+        return result, err
+    end
+    local rank = self:GetExactPlayerTopRank(region)
+    if rank then
+        local population = self:GetPopulation(region, "all")
+        result.estimatedRank = rank
+        result.rankMin = rank
+        result.rankMax = rank
+        result.rankUncertainty = nil
+        result.percentileMin = population and (rank - 1) / population * 100 or nil
+        result.percentileMax = population and rank / population * 100 or nil
+        result.isEstimate = false
+        result.isExactLeaderboardRank = true
+        result.isRoundedLeaderboardRank = nil
+        result.isRoundedTie = nil
+    end
+    return result
 end
 
 addon.API = API

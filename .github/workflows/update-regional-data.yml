@@ -13,6 +13,11 @@ on:
         required: true
         type: string
         default: "all"
+      publish_existing:
+        description: "Publish the already collected data in main without fetching again"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -47,6 +52,7 @@ jobs:
         run: python scripts/sync_core.py --check
 
       - name: Fetch and validate all regional cutoff data
+        if: ${{ !inputs.publish_existing }}
         env:
           RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
         run: |

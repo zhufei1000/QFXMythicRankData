@@ -11,6 +11,8 @@ import pathlib
 import sys
 from typing import Any
 
+import requests
+
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
@@ -28,6 +30,7 @@ from update_region_data import (
     fetch_cutoff_payload,
     fetch_score_tiers,
     fetch_static_data,
+    fetch_top_scores,
     normalize_season_info,
     normalize_score_tiers,
     resolve_season_context,
@@ -67,7 +70,7 @@ def finish_summary(
 ) -> dict[str, Any]:
     request_counts["total"] = sum(
         request_counts[key]
-        for key in ("staticData", "scoreTiers", "seasonCutoffs")
+        for key in ("staticData", "scoreTiers", "seasonCutoffs", "characterRankings")
     )
     summary = {
         "success": len(results) == len(regions)
@@ -111,8 +114,12 @@ def run_updates(
         "staticData": 0,
         "scoreTiers": 0,
         "seasonCutoffs": 0,
+        "characterRankings": 0,
         "total": 0,
     }
+
+    def count_rankings_request() -> None:
+        request_counts["characterRankings"] += 1
 
     try:
         request_counts["staticData"] += 1
@@ -210,6 +217,16 @@ def run_updates(
                 prepared[region] = build_ready_region_data(
                     payload, region, static_payload, tiers
                 )
+                try:
+                    top_rank = prepared[region]["cutoffs"]["p990"]["all"]["rank"]
+                    top_characters: list[dict[str, Any]] = []
+                    prepared[region]["topScores"] = fetch_top_scores(
+                        region, season_slug, top_rank, timeout,
+                        count_rankings_request, top_characters, True,
+                    )
+                    prepared[region]["topCharacters"] = top_characters
+                except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
+                    print(f"WARNING [{region}]: top score collection unavailable: {exc}", file=sys.stderr)
             else:
                 prepared[region] = build_empty_region_data(
                     region,
