@@ -14,6 +14,7 @@ API.currentRecordKind = nil
 API.currentRecordSpecID = nil
 API.currentRecordKey1 = nil
 API.currentRecordKey2 = nil
+API.currentRecordHeroIndex = nil
 API.lastError = nil
 
 local MODULE_MYTHIC_PLUS = "mythicplus"
@@ -53,6 +54,7 @@ local function ClearCurrentRecord(self)
     self.currentRecordSpecID = nil
     self.currentRecordKey1 = nil
     self.currentRecordKey2 = nil
+    self.currentRecordHeroIndex = nil
 end
 
 function API:RegisterDataManifest(manifest)

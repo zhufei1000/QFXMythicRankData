@@ -785,7 +785,7 @@ def main() -> int:
             (value for value in zone.get("partitions") or [] if isinstance(value, dict) and value.get("default")),
             None,
         ),
-        "strategy": "top 10 current-tree-valid ranked characters from public encounter rankings with includeCombatantInfo; representative real sample nearest majority talent features",
+        "strategy": f"up to {TARGET} current-tree-valid ranked characters from public encounter rankings with includeCombatantInfo; per-hero representatives selected during package build",
         "target_per_encounter_spec": TARGET,
         "max_pages_per_combo": MAX_PAGES,
         "http_requests": client.requests,

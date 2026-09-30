@@ -351,6 +351,8 @@ def module_file(
         )
         stats_length = len(encoded)
         recommendation_length = len(record.recommended)
+        base_stats_offset = statistics_offset
+        base_recommendation_offset = recommendation_offset
         row = by_spec[record.spec_id]
         record_index = len(row) + 1
         if kind == "mythicplus":
@@ -379,7 +381,11 @@ def module_file(
         if record.heroes:
             variants = []
             for hero, stats in zip(record.heroes, record.hero_statistics):
-                if hero.recommended and stats:
+                if hero.recommended == record.recommended and stats:
+                    variants.append([hero.subtree_id, hero.sample_count, base_recommendation_offset,
+                                     recommendation_length, base_stats_offset, stats_length,
+                                     hero.source_rank or 0])
+                elif hero.recommended and stats:
                     variant_stats = pack_statistics_v2(stats, schemas[record.spec_id])
                     variants.append([hero.subtree_id, hero.sample_count, recommendation_offset,
                                      len(hero.recommended), statistics_offset, len(variant_stats),
