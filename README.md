@@ -98,14 +98,14 @@ Supported cutoff keys are `p999`, `p990`, `p900`, `p750`, and `p600`. Supported 
 
 The same repository also generates one independent `QFXTalentData` addon for talent recommendations. It is not split by region:
 
-- Mythic+ uses the global Raider.IO specialization rankings and keeps ten valid logged-run talent samples for every dungeon and specialization.
+- Mythic+ uses the global Raider.IO specialization rankings and targets 50 valid logged-run talent samples for every dungeon and specialization. Raider.IO and Warcraft Logs collection run concurrently with independent rate limits; WCL difficulties remain sequential to respect the shared account quota.
 - Raid data uses the global Warcraft Logs rankings and stores Heroic and Mythic separately for every boss and specialization.
-- If a ranking row has no valid import string, collection continues farther down the ranking until ten valid samples are found or the public ranking data ends.
+- If a ranking row has no valid import string, collection continues farther down the ranking until 50 valid samples are found, the configured page cap is reached, or the public ranking data ends. It does not scan indefinitely to find a rare second hero tree.
 - During an early tier, a boss/spec/difficulty combination with no valid public data is omitted instead of failing the whole database update. It appears automatically in a later update when data becomes available.
 - Every recommendation is one of the collected valid Blizzard import strings.
-- Every content/spec combination stores one recommended Blizzard import string plus compact precomputed node statistics; the other sample strings are not shipped.
+- Every content/spec combination stores one real recommended Blizzard import string per observed hero tree plus compact precomputed node statistics. Sample usage determines display order; each hero's largest identical specialization-and-hero group supplies its highest-ranked member's full string. Class-tree variation is ignored for grouping. A missing second hero has zero samples and no string; ties have no unique mainstream hero.
 - The base `QFXTalentData` addon stores only the API, manifest, and specialization schemas. Mythic+, Heroic raid, and Mythic raid data are separate load-on-demand addons, so only the selected content type enters memory.
-- Data API V2 packages declare `QFX Talent Recommendations 0.5.0` as the minimum compatible display addon version.
+- Hero-aware Data API V2 packages declare `QFXTalents 0.9.0` as the minimum compatible display addon version.
 
 The public API is `_G.QFXTalentData`. Important methods include:
 

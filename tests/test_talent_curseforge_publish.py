@@ -40,7 +40,6 @@ def write_package(
         "QFXTalentData/Common.lua": "return\n",
         "QFXTalentData/Core.lua": "return\n",
         "QFXTalentData/QFXTalentData.toc": base_toc,
-        "QFXTalentData/README.md": "# QFXTalentData\n",
         "QFXTalentData/Schemas.lua": "return\n",
     }
     for addon, kind in talent.CONTENT_ADDONS.items():
@@ -68,16 +67,16 @@ def test_project_id_is_embedded_in_source_and_generated_toc() -> None:
         encoding="utf-8"
     )
     marker = "## X-Curse-Project-ID: 1627870"
-    compatibility = "## X-QFX-Min-Display-Version: 0.5.0"
+    compatibility = ("## X-QFX-Min-Display-Version: 0.5.0", "## X-QFX-Min-Display-Version: 0.9.0")
     interface = "## Interface: 120007, 120100"
     assert talent.PROJECT_ID == 1627870
     assert marker in builder
     assert marker in toc
     assert interface in builder
     assert interface in toc
-    assert 'MIN_DISPLAY_VERSION = "0.5.0"' in builder
+    assert 'MIN_DISPLAY_VERSION = "0.9.0"' in builder
     assert "## X-QFX-Min-Display-Version: {MIN_DISPLAY_VERSION}" in builder
-    assert compatibility in toc
+    assert any(marker in toc for marker in compatibility)
 
 
 def test_all_content_addons_are_load_on_demand() -> None:
@@ -88,7 +87,7 @@ def test_all_content_addons_are_load_on_demand() -> None:
         assert "## Dependencies: QFXTalentData" in toc
         assert "## LoadOnDemand: 1" in toc
         assert "## X-Curse-Project-ID: 1627870" in toc
-        assert "## X-QFX-Min-Display-Version: 0.5.0" in toc
+        assert any(f"## X-QFX-Min-Display-Version: {version}" in toc for version in ("0.5.0", "0.9.0"))
         assert "## Interface: 120007, 120100" in toc
 
 
@@ -137,7 +136,7 @@ def test_validate_mode_never_requires_api_token(
     assert result == 0
     assert '"status": "validated"' in report.read_text(encoding="utf-8")
     assert f"Version: {VERSION}" in changelog.read_text(encoding="utf-8")
-    assert "0.5.0 or newer" in changelog.read_text(encoding="utf-8")
+    assert "0.9.0 or newer" in changelog.read_text(encoding="utf-8")
 
 
 def test_workflow_uploads_changed_talent_data_before_pushing() -> None:

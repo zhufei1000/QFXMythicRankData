@@ -236,12 +236,14 @@ local function FindRecord(self, kind, specID, key1, key2)
     return nil
 end
 
-local function BuildRecord(self, kind, specID, key1, key2)
+local function BuildRecord(self, kind, specID, key1, key2, heroIndex)
+    heroIndex = heroIndex or 1
     if self.currentRecord
         and self.currentRecordKind == kind
         and self.currentRecordSpecID == specID
         and self.currentRecordKey1 == key1
         and self.currentRecordKey2 == key2
+        and self.currentRecordHeroIndex == heroIndex
     then
         return self.currentRecord
     end
@@ -262,12 +264,31 @@ local function BuildRecord(self, kind, specID, key1, key2)
         statsLength = records[index + 3]
         sampleCount = records[index + 6]
     end
+    local variants = module.heroRecords and module.heroRecords[specID]
+    variants = variants and variants[index]
+    local heroes
+    if variants then
+        local variant = variants[heroIndex]
+        if not variant or variant[4] == 0 then return nil end
+        statsOffset, statsLength = variant[5], variant[6]
+        heroes = {}
+        for position, row in ipairs(variants) do
+            heroes[position] = {
+                subtreeID = row[1], sampleCount = row[2], sourceRank = row[7],
+                name = self.manifest.heroNames and self.manifest.heroNames[row[1]],
+                available = row[4] > 0,
+            }
+        end
+    elseif heroIndex ~= 1 then
+        return nil
+    end
     local record = {
         apiVersion = 2,
         formatVersion = 2,
         dataVersion = module.dataVersion,
         sampleCount = sampleCount,
-        sourceRankLimit = 10,
+        sourceRankLimit = module.sampleTarget or 10,
+        heroRecommendations = heroes,
         schema = self.schemas[specID],
         selection = module.statsBlob:sub(
             statsOffset,
@@ -279,17 +300,26 @@ local function BuildRecord(self, kind, specID, key1, key2)
     self.currentRecordSpecID = specID
     self.currentRecordKey1 = key1
     self.currentRecordKey2 = key2
+    self.currentRecordHeroIndex = heroIndex
     return record
 end
 
-local function GetRecommended(self, kind, specID, key1, key2)
+local function GetRecommended(self, kind, specID, key1, key2, heroIndex)
     local module, records, index = FindRecord(self, kind, specID, key1, key2)
     if not module then
         return nil
     end
     local offset
     local length
-    if kind == MODULE_MYTHIC_PLUS then
+    local variants = module.heroRecords and module.heroRecords[specID]
+    variants = variants and variants[index]
+    if variants then
+        local row = variants[heroIndex or 1]
+        if not row or row[4] == 0 then return nil end
+        offset, length = row[3], row[4]
+    elseif heroIndex and heroIndex ~= 1 then
+        return nil
+    elseif kind == MODULE_MYTHIC_PLUS then
         offset = records[index + 3]
         length = records[index + 4]
     else
@@ -299,38 +329,38 @@ local function GetRecommended(self, kind, specID, key1, key2)
     return module.recommendationBlob:sub(offset, offset + length - 1)
 end
 
-function API:GetDungeonData(dungeonID, specID)
+function API:GetDungeonData(dungeonID, specID, heroIndex)
     specID = ResolveSpecID(specID)
     if not specID or not dungeonID then
         return nil
     end
-    return BuildRecord(self, MODULE_MYTHIC_PLUS, specID, dungeonID, nil)
+    return BuildRecord(self, MODULE_MYTHIC_PLUS, specID, dungeonID, nil, heroIndex)
 end
 
-function API:GetRaidData(raidID, bossID, difficultyID, specID)
+function API:GetRaidData(raidID, bossID, difficultyID, specID, heroIndex)
     specID = ResolveSpecID(specID)
     local kind = RaidModuleKind(difficultyID)
     if not specID or not kind or not raidID or not bossID then
         return nil
     end
-    return BuildRecord(self, kind, specID, raidID, bossID)
+    return BuildRecord(self, kind, specID, raidID, bossID, heroIndex)
 end
 
-function API:GetRecommendedDungeonTalent(dungeonID, specID)
+function API:GetRecommendedDungeonTalent(dungeonID, specID, heroIndex)
     specID = ResolveSpecID(specID)
     if not specID or not dungeonID then
         return nil
     end
-    return GetRecommended(self, MODULE_MYTHIC_PLUS, specID, dungeonID, nil)
+    return GetRecommended(self, MODULE_MYTHIC_PLUS, specID, dungeonID, nil, heroIndex)
 end
 
-function API:GetRecommendedRaidTalent(raidID, bossID, difficultyID, specID)
+function API:GetRecommendedRaidTalent(raidID, bossID, difficultyID, specID, heroIndex)
     specID = ResolveSpecID(specID)
     local kind = RaidModuleKind(difficultyID)
     if not specID or not kind or not raidID or not bossID then
         return nil
     end
-    return GetRecommended(self, kind, specID, raidID, bossID)
+    return GetRecommended(self, kind, specID, raidID, bossID, heroIndex)
 end
 
 function API:GetDungeonSelectionRates(dungeonID, specID)

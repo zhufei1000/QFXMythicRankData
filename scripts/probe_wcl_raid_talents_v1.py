@@ -20,7 +20,7 @@ from wcl_talent_export import DEFAULT_TALENTS_URL, TalentExporter, TalentExportE
 TOKEN_URL = "https://www.warcraftlogs.com/oauth/token"
 GRAPHQL_URL = "https://www.warcraftlogs.com/api/v2/client"
 
-TARGET = int(os.environ.get("WCL_TARGET", "10"))
+TARGET = int(os.environ.get("WCL_TARGET", "50"))
 MAX_PAGES = int(os.environ.get("WCL_MAX_PAGES", "3"))
 ZONE_OVERRIDE = int(os.environ["WCL_ZONE_ID"]) if os.environ.get("WCL_ZONE_ID", "").strip() else None
 DIFFICULTY_OVERRIDE = int(os.environ["WCL_DIFFICULTY"]) if os.environ.get("WCL_DIFFICULTY", "").strip() else None
@@ -452,7 +452,7 @@ def parse_sample(row: dict[str, Any]) -> TalentSample | None:
 
 
 def ranked_rows(rows: list[dict[str, Any]]) -> Iterable[dict[str, Any]]:
-    """Preserve WCL ranking order so the retained samples are the actual top ten."""
+    """Preserve WCL ranking order when retaining the target number of samples."""
     return rows
 
 
@@ -673,13 +673,22 @@ def main() -> int:
                             # Rankings can contain a combatant captured just before
                             # a live talent hotfix. Never publish an incomplete
                             # import string: skip that row and keep scanning in
-                            # ranking order until ten current-tree samples exist.
+                            # ranking order until the target is reached.
                             conversion_rejections += 1
                             conversion_errors[str(exc)] += 1
                             print(
                                 f"skip rank={sample.rank} {display} / {encounter.get('name')}: {exc}",
                                 flush=True,
                             )
+                            continue
+                    if sample and sample.loadout_text:
+                        try:
+                            hero = talent_exporter.hero_subtree(sample.loadout_text, spec_id)
+                            if talent_exporter.hero_entries[spec_id] and hero is None:
+                                raise TalentExportError("hero subtree selection is missing")
+                        except TalentExportError as exc:
+                            conversion_rejections += 1
+                            conversion_errors[str(exc)] += 1
                             continue
                     if sample and sample.identity not in samples[encounter_id][spec_id]:
                         samples[encounter_id][spec_id][sample.identity] = sample

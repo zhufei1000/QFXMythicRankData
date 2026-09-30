@@ -83,6 +83,7 @@ class Candidate:
     spec_id: int
     character_key: str
     run_id: int
+    rank: int | None = None
 
 
 @dataclass(frozen=True)

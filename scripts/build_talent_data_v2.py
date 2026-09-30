@@ -28,11 +28,12 @@ from talent_statistics import (
     pack_statistics_v2,
 )
 from wcl_talent_export import TalentExporter, TalentExportError
+from hero_recommendations import HeroRecommendation, analyze_heroes
 
 
 API_VERSION = 2
 FORMAT_VERSION = 2
-MIN_DISPLAY_VERSION = "0.5.0"
+MIN_DISPLAY_VERSION = "0.9.0"
 BASE_ADDON = "QFXTalentData"
 MODULES = {
     "mythicplus": "QFXTalentData_MythicPlus",
@@ -55,6 +56,8 @@ class Record:
     recommended: str
     sample_count: int
     statistics: TalentStatistics
+    heroes: tuple[HeroRecommendation, ...] = ()
+    hero_statistics: tuple[TalentStatistics | None, ...] = ()
 
 
 def arguments() -> argparse.Namespace:
@@ -102,13 +105,11 @@ def collect_records(
         spec_id = legacy.pos(row.get("spec_id"))
         if not dungeon_id or spec_id not in legacy.SPEC_CLASS:
             continue
-        loadouts = legacy.samples(row.get("sample_loadouts"))
-        recommended = legacy.txt(row.get("recommended_loadout"))
-        if not loadouts:
+        raw_samples = row.get("sample_loadouts")
+        if not isinstance(raw_samples, list) or not raw_samples:
             continue
-        if recommended not in loadouts:
-            recommended = loadouts[0]
         try:
+            loadouts, recommended, heroes = analyze_heroes(exporter, spec_id, raw_samples)
             statistics = analyze_statistics(
                 exporter,
                 spec_id,
@@ -129,6 +130,9 @@ def collect_records(
             recommended=recommended,
             sample_count=len(loadouts),
             statistics=statistics,
+            heroes=heroes,
+            hero_statistics=tuple(analyze_statistics(exporter, spec_id, loadouts, hero.recommended)
+                                  if hero.recommended else None for hero in heroes),
         ))
         spec_names.setdefault(
             spec_id,
@@ -152,15 +156,11 @@ def collect_records(
             raid_id = boss_to_raid.get(boss_id or -1)
             if not boss_id or not raid_id or spec_id not in legacy.SPEC_CLASS:
                 continue
-            loadouts = legacy.samples(
-                row.get("samples") if isinstance(row.get("samples"), list) else []
-            )
-            recommended = legacy.txt(row.get("recommended_loadout"))
-            if not loadouts:
+            raw_samples = row.get("samples")
+            if not isinstance(raw_samples, list) or not raw_samples:
                 continue
-            if recommended not in loadouts:
-                recommended = loadouts[0]
             try:
+                loadouts, recommended, heroes = analyze_heroes(exporter, spec_id, raw_samples)
                 statistics = analyze_statistics(
                     exporter,
                     spec_id,
@@ -181,6 +181,9 @@ def collect_records(
                 recommended=recommended,
                 sample_count=len(loadouts),
                 statistics=statistics,
+                heroes=heroes,
+                hero_statistics=tuple(analyze_statistics(exporter, spec_id, loadouts, hero.recommended)
+                                      if hero.recommended else None for hero in heroes),
             ))
             spec_names.setdefault(
                 spec_id,
@@ -246,6 +249,8 @@ def manifest_file(data: dict[str, Any]) -> str:
         f"    [{spec_id}]={q(name)},"
         for spec_id, name in sorted(data["specNames"].items())
     )
+    output.extend(["  },", "  heroNames={"])
+    output.extend(f"    [{hero_id}]={q(name)}," for hero_id, name in sorted(data.get("heroNames", {}).items()))
     output.extend(["  },", "  raidDifficulties={"])
     output.extend(
         f"    [{difficulty_id}]={q(name)},"
@@ -324,6 +329,7 @@ def module_file(
     statistics_blob_parts: list[str] = []
     recommendation_blob_parts: list[str] = []
     by_spec: dict[int, list[int]] = defaultdict(list)
+    hero_records: dict[int, dict[int, list[list[int]]]] = defaultdict(dict)
     statistics_offset = 1
     recommendation_offset = 1
     module_records = sorted(
@@ -346,6 +352,7 @@ def module_file(
         stats_length = len(encoded)
         recommendation_length = len(record.recommended)
         row = by_spec[record.spec_id]
+        record_index = len(row) + 1
         if kind == "mythicplus":
             row.extend([
                 record.key1,
@@ -369,6 +376,21 @@ def module_file(
         recommendation_blob_parts.append(record.recommended)
         statistics_offset += stats_length
         recommendation_offset += recommendation_length
+        if record.heroes:
+            variants = []
+            for hero, stats in zip(record.heroes, record.hero_statistics):
+                if hero.recommended and stats:
+                    variant_stats = pack_statistics_v2(stats, schemas[record.spec_id])
+                    variants.append([hero.subtree_id, hero.sample_count, recommendation_offset,
+                                     len(hero.recommended), statistics_offset, len(variant_stats),
+                                     hero.source_rank or 0])
+                    recommendation_blob_parts.append(hero.recommended)
+                    statistics_blob_parts.append(variant_stats)
+                    recommendation_offset += len(hero.recommended)
+                    statistics_offset += len(variant_stats)
+                else:
+                    variants.append([hero.subtree_id, 0, 0, 0, 0, 0, 0])
+            hero_records[record.spec_id][record_index] = variants
 
     output = [
         "-- Generated compact content module. Do not edit manually.",
@@ -380,6 +402,7 @@ def module_file(
         f"  kind={q(kind)},",
         f"  dataVersion={q(version)},",
         f"  stride={6 if kind == 'mythicplus' else 7},",
+        "  sampleTarget=50,",
         f"  statsBlob={q(''.join(statistics_blob_parts))},",
         f"  recommendationBlob={q(''.join(recommendation_blob_parts))},",
         "  records={",
@@ -388,6 +411,13 @@ def module_file(
         output.append(
             f"    [{spec_id}]={{{','.join(map(str, values))}}},"
         )
+    output.extend(["  },", "  heroRecords={"])
+    for spec_id, indexed in sorted(hero_records.items()):
+        output.append(f"    [{spec_id}]={{")
+        for index, variants in sorted(indexed.items()):
+            packed = ",".join("{" + ",".join(map(str, values)) + "}" for values in variants)
+            output.append(f"      [{index}]={{{packed}}},")
+        output.append("    },")
     output.extend([
         "  },",
         "}",
@@ -519,7 +549,7 @@ def write_package(
         ) as archive:
             for addon_name, path in addon_paths.items():
                 for file_path in sorted(path.rglob("*")):
-                    if file_path.is_file():
+                    if file_path.is_file() and file_path.suffix in {".lua", ".toc"}:
                         archive.write(
                             file_path,
                             f"{addon_name}/{file_path.relative_to(path).as_posix()}",
@@ -570,6 +600,8 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "raids": raids,
         "diffs": difficulties,
         "specNames": spec_names,
+        "heroNames": {hero_id: name for entries in exporter.hero_entries.values()
+                      for hero_id, name in entries.values()},
     }
     result = write_package(
         args.output,
