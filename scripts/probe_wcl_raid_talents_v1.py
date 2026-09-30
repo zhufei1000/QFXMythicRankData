@@ -637,6 +637,7 @@ def main() -> int:
         print(f"\n=== [{spec_index}/{len(WCL_SPECS)}] {display} ===", flush=True)
         for encounter in encounters:
             encounter_id = int(encounter["id"])
+            source_position = 0
             for page in range(1, MAX_PAGES + 1):
                 if len(samples[encounter_id][spec_id]) >= TARGET:
                     break
@@ -662,7 +663,10 @@ def main() -> int:
                         "first_row_keys": sorted(rows[0].keys()) if rows else [],
                     })
                 for row in ranked_rows(rows):
+                    source_position += 1
                     sample = parse_sample(row)
+                    if sample and sample.rank is None:
+                        sample = replace(sample, rank=source_position)
                     if sample and not sample.loadout_text:
                         try:
                             sample = replace(

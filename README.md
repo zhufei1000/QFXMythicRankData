@@ -111,11 +111,15 @@ The public API is `_G.QFXTalentData`. Important methods include:
 
 ```lua
 local API = QFXTalentData
-local dungeonCode, dungeonData = API:GetRecommendedDungeonTalent(dungeonID, specID)
-local raidCode, raidData = API:GetRecommendedRaidTalent(raidID, bossID, difficultyID, specID)
+local dungeonCode = API:GetRecommendedDungeonTalent(dungeonID, specID, 1)
+local alternateCode = API:GetRecommendedDungeonTalent(dungeonID, specID, 2)
+local dungeonData = API:GetDungeonData(dungeonID, specID, 1)
+local raidCode = API:GetRecommendedRaidTalent(raidID, bossID, difficultyID, specID, 1)
 ```
 
 Raid difficulty IDs are stored independently (`4` Heroic and `5` Mythic). Missing data returns `nil`; the API never silently substitutes one difficulty for another.
+
+The optional final hero index defaults to `1` (higher sample usage). Index `2` returns `nil` when that hero has no valid samples. `heroRecommendations` contains subtree IDs, sample counts, availability, and fallback English names; the display addon uses the client's localized hero name on hover. Usage is measured among valid collected samples, not all players worldwide.
 
 ## Development
 

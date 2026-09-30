@@ -184,7 +184,7 @@ def build_changelog(package: publisher.Package) -> str:
     return (
         "QFX Talent Data update.\n\n"
         f"Version: {package.version}\n\n"
-        f"Requires QFX Talent Recommendations {MIN_DISPLAY_VERSION} or newer.\n\n"
+        f"Requires QFXTalents {MIN_DISPLAY_VERSION} or newer.\n\n"
         "Global Mythic+ and Heroic/Mythic raid talent database.\n\n"
         "Sources: Raider.IO and Warcraft Logs.\n"
     )
