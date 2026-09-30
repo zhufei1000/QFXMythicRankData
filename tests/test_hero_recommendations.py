@@ -78,9 +78,15 @@ def test_compact_module_exposes_each_hero_without_cross_fallback(exporter, tmp_p
     stats = analyze_statistics(exporter, 250, loadouts, chosen)
     variants = tuple(analyze_statistics(exporter, 250, loadouts, hero.recommended) for hero in heroes)
     record = Record("mythicplus", 250, 1, None, chosen, 50, stats, heroes, variants)
+    one_loadouts, one_chosen, one_heroes = analyze_heroes(exporter, 250, [first] * 50)
+    one_stats = analyze_statistics(exporter, 250, one_loadouts, one_chosen)
+    one = Record("mythicplus", 250, 2, None, one_chosen, 50, one_stats, one_heroes, (one_stats, None))
     schema = build_spec_schema([stats])
     module_path = tmp_path / "Data.lua"
-    module_path.write_text(module_file("mythicplus", "test", [record], {250: schema}), encoding="utf-8")
+    module_path.write_text(module_file("mythicplus", "test", [record, one], {250: schema}), encoding="utf-8")
+    raid_path = tmp_path / "Raid.lua"
+    raid = Record("raidHeroic", 250, 10, 100, chosen, 50, stats, heroes, variants)
+    raid_path.write_text(module_file("raidHeroic", "test", [raid], {250: schema}), encoding="utf-8")
     core = Path(__file__).resolve().parents[1] / "scripts/templates/qfx_talent_data/Core.lua"
     local_core = tmp_path / "Core.lua"
     shutil.copyfile(core, local_core)
@@ -90,6 +96,7 @@ local api = QFXTalentData
 api.manifest = {{dataVersion="test", heroNames={{[1]="Hero One",[2]="Hero Two"}}}}
 api.schemas = {{[250]="schema"}}
 dofile("{module_path.as_posix()}")
+dofile("{raid_path.as_posix()}")
 local first = api:GetDungeonData(1,250,1)
 local second = api:GetDungeonData(1,250,2)
 assert(first.sampleCount == 50 and first.sourceRankLimit == 50)
@@ -98,6 +105,11 @@ assert(second.heroRecommendations[2].sampleCount == 15)
 assert(first.selection ~= second.selection)
 assert(api:GetRecommendedDungeonTalent(1,250,1) == "{first}")
 assert(api:GetRecommendedDungeonTalent(1,250,2) == "{second}")
+assert(api:GetRecommendedRaidTalent(10,100,4,250,2) == "{second}")
+assert(api:GetRaidData(10,100,4,250,2).heroRecommendations[2].sampleCount == 15)
+assert(api:GetDungeonData(2,250,1).heroRecommendations[2].sampleCount == 0)
+assert(api:GetDungeonData(2,250,2) == nil)
+assert(api:GetRecommendedDungeonTalent(2,250,2) == nil)
 api.contentModules.mythicplus.heroRecords[250][1][2][4] = 0
 assert(api:GetRecommendedDungeonTalent(1,250,2) == nil)
 '''
