@@ -1,4 +1,3 @@
-from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
 import sys
@@ -40,6 +39,20 @@ def test_raid_difficulties_remain_sequential_and_filenames_match_workflow(monkey
     commands = []
     monkeypatch.setattr(collector, "run_script", lambda *args: commands.append(args))
     collector.collect_raids()
+    assert commands[0][commands[0].index("--catalog-output") + 1] == str(
+        tmp_path / "active_raid_catalog.json"
+    )
     assert [args[args.index("--difficulty") + 1] for args in commands[1:]] == ["4", "5"]
     assert str(tmp_path / "wcl_zone_53_heroic.json") in commands[1]
     assert str(tmp_path / "wcl_zone_53_mythic.json") in commands[2]
+
+
+def test_daily_schedule_is_beijing_0919_without_push_collection():
+    workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/update-mythic-talents-data.yml").read_text()
+    triggers = workflow.split("permissions:", 1)[0]
+    assert triggers.count("- cron:") == 1
+    assert 'cron: "19 1 * * *"' in triggers
+    assert "  workflow_dispatch:" in triggers
+    assert "  push:" not in triggers
+    assert 'MYTHICPLUS_TARGET: "50"' in workflow
+    assert 'WCL_TARGET: "50"' in workflow

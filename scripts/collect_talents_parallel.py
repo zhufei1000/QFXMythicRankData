@@ -23,6 +23,7 @@ def run_script(name: str, *arguments: str) -> None:
 
 def collect_raids() -> None:
     run_script("discover_raid_targets.py", "--output", str(OUT / "raid_targets.json"),
+               "--catalog-output", str(OUT / "active_raid_catalog.json"),
                "--fallback-zones", "46,50")
     payload = json.loads((OUT / "raid_targets.json").read_text(encoding="utf-8"))
     zones = sorted({int(target["zone_id"]) for target in payload["targets"]})

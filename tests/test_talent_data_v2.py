@@ -6,6 +6,9 @@ import sys
 import zipfile
 from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -31,6 +34,74 @@ module = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
+
+
+def test_raid_manifest_excludes_old_season_without_hiding_empty_current_bosses():
+    def raid(raid_id, boss_id):
+        return {
+            "id": raid_id,
+            "names": {"enUS": f"Raid {raid_id}"},
+            "bosses": {
+                str(boss_id): {"names": {"enUS": f"Boss {boss_id}"}},
+            },
+        }
+    catalog = {"raids": {"old": raid(10, 100), "current": raid(20, 200)}}
+    targets = {"active_raids": [{"id": 999, "slug": "current"}]}
+    raids, bosses = module.raid_manifest(catalog, targets)
+    assert [row["slug"] for row in raids] == ["current"]
+    assert [boss["id"] for boss in raids[0]["bosses"]] == [200]
+    assert bosses == {200: 20}
+    assert len(catalog["raids"]) == 2
+
+
+@pytest.mark.parametrize("targets", [
+    {}, {"active_raids": []}, {"active_raids": [{"id": 1}]},
+    {"active_raids": [{"slug": "unknown"}]},
+])
+def test_raid_manifest_rejects_missing_discovery_instead_of_using_all_seasons(targets):
+    with pytest.raises(ValueError):
+        module.raid_manifest({"raids": {}}, targets)
+
+
+def test_raid_manifest_allows_unranked_active_raids_missing_from_catalog():
+    catalog = {"raids": {"ranked": {"id": 10, "names": {"enUS": "Raid"}}}}
+    targets = {"active_raids": [{"slug": "unranked"}, {"slug": "ranked"}]}
+    raids, _bosses = module.raid_manifest(catalog, targets)
+    assert [row["slug"] for row in raids] == ["ranked"]
+
+
+def test_build_uses_discovery_when_rebuilding_from_full_localization_library(
+    monkeypatch, tmp_path,
+):
+    def raid(raid_id, boss_id):
+        return {
+            "id": raid_id, "names": {"enUS": "Raid"},
+            "bosses": {str(boss_id): {"names": {"enUS": "Boss"}}},
+        }
+    sources = {
+        "mplus": {"generated_at": "2026-09-30T06:32:45+00:00"},
+        "locales": {"raids": {"old": raid(10, 100), "current": raid(20, 200)}},
+        "targets": {"active_raids": [{"slug": "current"}]},
+    }
+    monkeypatch.setattr(module.legacy, "load", lambda path: sources.get(path, {}))
+    monkeypatch.setattr(
+        module.TalentExporter, "from_path", lambda path: SimpleNamespace(hero_entries={}),
+    )
+    monkeypatch.setattr(module, "build_schemas", lambda records: {})
+    def collect(mplus, inputs, bosses, exporter):
+        assert bosses == {200: 20}
+        return {}, [], {}
+    monkeypatch.setattr(module, "collect_records", collect)
+    def write(output, data, schemas, records, zip_path):
+        assert [row["slug"] for row in data["raids"]] == ["current"]
+        return {"verified": True}
+    monkeypatch.setattr(module, "write_package", write)
+    args = SimpleNamespace(
+        input="mplus", raid_input=[], dungeon_locales="dungeons",
+        raid_locales="locales", raid_targets="targets", talent_trees="trees",
+        output=tmp_path / "QFXTalentData", zip_path=None,
+    )
+    assert module.build(args) == {"verified": True}
 
 
 def statistics(

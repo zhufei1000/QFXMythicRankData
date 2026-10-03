@@ -15,6 +15,7 @@ class HeroRecommendation:
     sample_count: int
     recommended: str | None
     source_rank: int | None
+    loadouts: tuple[str, ...] = ()
 
 
 def representative(exporter: TalentExporter, spec_id: int, candidates: list[tuple[str, int]]) -> tuple[str, int]:
@@ -56,7 +57,9 @@ def analyze_heroes(exporter: TalentExporter, spec_id: int, rows: list) -> tuple[
     for hid, name in names.items():
         group = by_hero[hid]
         code, rank = representative(exporter, spec_id, group) if group else (None, None)
-        heroes.append(HeroRecommendation(hid, name, len(group), code, rank))
+        heroes.append(HeroRecommendation(
+            hid, name, len(group), code, rank, tuple(text for text, _ in group),
+        ))
     # Stable IDs break usage ties; a tie has no single mainstream hero tree.
     heroes.sort(key=lambda value: (-value.sample_count, value.subtree_id))
     if heroes and heroes[0].recommended:

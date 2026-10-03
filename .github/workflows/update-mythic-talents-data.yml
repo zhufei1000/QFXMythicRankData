@@ -2,8 +2,8 @@ name: Update QFX Talent Data
 
 on:
   schedule:
-    - cron: "17 4 * * *"
-    - cron: "17 16 * * *"
+    # 09:19 Asia/Shanghai (UTC+8), once per day.
+    - cron: "19 1 * * *"
   workflow_dispatch:
     inputs:
       wcl_max_pages:
@@ -11,35 +11,6 @@ on:
         required: true
         type: string
         default: "5"
-  push:
-    branches:
-      - main
-    paths:
-      - scripts/collect_mythicplus_talents.py
-      - scripts/collect_talents_parallel.py
-      - scripts/hero_recommendations.py
-      - scripts/collect_raid_talents.py
-      - scripts/build_talent_data.py
-      - scripts/build_talent_data_v2.py
-      - scripts/probe_raiderio_spec_dungeon_v2.py
-      - scripts/probe_raiderio_spec_dungeon_v4.py
-      - scripts/probe_wcl_raid_talents_v1.py
-      - scripts/discover_raid_targets.py
-      - scripts/wcl_talent_export.py
-      - scripts/talent_statistics.py
-      - scripts/publish_talent_curseforge.py
-      - scripts/templates/qfx_talent_data/**
-      - tests/test_talent_data.py
-      - tests/test_talent_data_v2.py
-      - tests/test_talent_statistics.py
-      - tests/test_wcl_talent_export.py
-      - tests/test_hero_recommendations.py
-      - tests/test_collect_talents_parallel.py
-      - tests/test_talent_curseforge_publish.py
-      - tests/test_discover_raid_targets.py
-      - config/mythic_talents_dungeons.json
-      - config/mythic_talents_raids.json
-      - .github/workflows/update-mythic-talents-data.yml
 permissions:
   contents: write
 
@@ -140,6 +111,8 @@ jobs:
           python scripts/build_talent_data_v2.py \
             --input artifacts/raiderio_mainstream_talents_v4.json \
             "${raid_args[@]}" \
+            --raid-locales artifacts/active_raid_catalog.json \
+            --raid-targets artifacts/raid_targets.json \
             --talent-trees artifacts/raidbots_talents_live.json \
             --output QFXTalentData \
             --zip "artifacts/QFXTalentData.zip"
@@ -309,6 +282,7 @@ jobs:
             artifacts/raiderio_mainstream_talents_v4.md
             artifacts/raidbots_talents_live.json
             artifacts/raid_targets.json
+            artifacts/active_raid_catalog.json
             artifacts/raid_zones.txt
             artifacts/wcl_zone_*_heroic.json
             artifacts/wcl_zone_*_heroic.md

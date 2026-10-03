@@ -74,6 +74,11 @@ def arguments() -> argparse.Namespace:
         type=pathlib.Path,
         default=ROOT / "config/mythic_talents_raids.json",
     )
+    parser.add_argument(
+        "--raid-targets",
+        type=pathlib.Path,
+        help="restrict the raid catalog to this collection's discovered active raids",
+    )
     parser.add_argument("--talent-trees", required=True, type=pathlib.Path)
     parser.add_argument("--output", type=pathlib.Path, default=ROOT / BASE_ADDON)
     parser.add_argument("--zip", dest="zip_path", type=pathlib.Path)
@@ -82,6 +87,32 @@ def arguments() -> argparse.Namespace:
 
 def q(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
+
+
+def raid_manifest(
+    catalog: dict[str, Any],
+    targets: dict[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], dict[int, int]]:
+    if targets is None:
+        return legacy.raid_manifest(catalog)
+    active = targets.get("active_raids")
+    if not isinstance(active, list) or not active:
+        raise ValueError("Active raid discovery is empty; refusing a stale raid catalog")
+    slugs = set()
+    for raid in active:
+        slug = legacy.txt(raid.get("slug")) if isinstance(raid, dict) else ""
+        if not slug:
+            raise ValueError("Active raid discovery contains a raid without a slug")
+        slugs.add(slug)
+    raids, bosses = legacy.raid_manifest({
+        "raids": {
+            slug: row for slug, row in (catalog.get("raids") or {}).items()
+            if slug in slugs
+        },
+    })
+    if not raids:
+        raise ValueError("No active raids match the runtime raid catalog")
+    return raids, bosses
 
 
 def collect_records(
@@ -131,7 +162,7 @@ def collect_records(
             sample_count=len(loadouts),
             statistics=statistics,
             heroes=heroes,
-            hero_statistics=tuple(analyze_statistics(exporter, spec_id, loadouts, hero.recommended)
+            hero_statistics=tuple(analyze_statistics(exporter, spec_id, hero.loadouts, hero.recommended)
                                   if hero.recommended else None for hero in heroes),
         ))
         spec_names.setdefault(
@@ -182,7 +213,7 @@ def collect_records(
                 sample_count=len(loadouts),
                 statistics=statistics,
                 heroes=heroes,
-                hero_statistics=tuple(analyze_statistics(exporter, spec_id, loadouts, hero.recommended)
+                hero_statistics=tuple(analyze_statistics(exporter, spec_id, hero.loadouts, hero.recommended)
                                       if hero.recommended else None for hero in heroes),
             ))
             spec_names.setdefault(
@@ -345,8 +376,18 @@ def module_file(
         ),
     )
     for record in module_records:
+        primary_statistics = record.statistics
+        if record.heroes:
+            if len(record.hero_statistics) != len(record.heroes):
+                raise ValueError("hero recommendations and statistics are not aligned")
+            for hero, stats in zip(record.heroes, record.hero_statistics):
+                if hero.recommended and (stats is None or stats.valid_samples != hero.sample_count):
+                    raise ValueError("node statistics must use the hero's own sample count")
+            primary_statistics = record.hero_statistics[0]
+            if primary_statistics is None:
+                raise ValueError("primary hero recommendation has no node statistics")
         encoded = pack_statistics_v2(
-            record.statistics,
+            primary_statistics,
             schemas[record.spec_id],
         )
         stats_length = len(encoded)
@@ -583,8 +624,10 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         mythic_plus,
         legacy.load(args.dungeon_locales),
     )
-    raids, boss_to_raid = legacy.raid_manifest(
-        legacy.load(args.raid_locales)
+    targets_path = getattr(args, "raid_targets", None)
+    raids, boss_to_raid = raid_manifest(
+        legacy.load(args.raid_locales),
+        legacy.load(targets_path) if targets_path else None,
     )
     exporter = TalentExporter.from_path(args.talent_trees)
     spec_names, records, difficulties = collect_records(
