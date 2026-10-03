@@ -3,22 +3,24 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import pathlib
 import sys
 import threading
 import time
 from collections import Counter, defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import probe_raiderio_spec_dungeon_v2 as core
+from wcl_talent_export import TalentExporter, TalentExportError
 
-TARGET = 10
+TARGET = int(os.environ.get("MYTHICPLUS_TARGET", "50"))
 WORKERS = 160
 RATE = 900
 WAVE_PER_DUNGEON = 10
-MAX_PAGES = 5
+MAX_PAGES = int(os.environ.get("MYTHICPLUS_MAX_PAGES", "5"))
 OUT = pathlib.Path("artifacts")
 JSON_OUT = OUT / "raiderio_mainstream_talents_v4.json"
 MD_OUT = OUT / "raiderio_mainstream_talents_v4.md"
@@ -33,6 +35,7 @@ class TalentSample:
     features: frozenset[str]
     node_choices: tuple[tuple[str, str], ...]
     hero_subtree_id: int | None
+    rank: int | None = None
 
 
 @dataclass(frozen=True)
@@ -154,16 +157,27 @@ def validate(
     season: str,
     by_id: dict[int, dict[str, Any]],
     by_challenge: dict[int, dict[str, Any]],
+    exporter: TalentExporter | None = None,
 ) -> tuple[core.Candidate, TalentSample | None]:
     summary = fetch_summary(candidate.run_id, season, by_id, by_challenge)
     target = summary.roster.get(candidate.character_key) if summary and summary.dungeon_id == candidate.dungeon_id else None
     if not target or target[0] != candidate.spec_id:
         return candidate, None
-    return candidate, target[1]
+    sample = target[1]
+    if sample and exporter:
+        try:
+            hero = exporter.hero_subtree(sample.loadout_text, candidate.spec_id)
+            if exporter.hero_entries[candidate.spec_id] and hero is None:
+                return candidate, None
+            if sample.hero_subtree_id and hero != sample.hero_subtree_id:
+                return candidate, None
+        except TalentExportError:
+            return candidate, None
+    return candidate, replace(sample, rank=candidate.rank) if sample else None
 
 
 def select_recommendation(samples: dict[str, TalentSample]) -> dict[str, Any]:
-    ordered = list(samples.items())
+    ordered = sorted(samples.items(), key=lambda item: item[1].rank or float("inf"))
     n = len(ordered)
     if not n:
         return {
@@ -234,6 +248,7 @@ def select_recommendation(samples: dict[str, TalentSample]) -> dict[str, Any]:
                 "character_key": key,
                 "loadout": sample.loadout_text,
                 "hero_subtree_id": sample.hero_subtree_id,
+                "rank": sample.rank,
             }
             for key, sample in ordered
         ],
@@ -282,7 +297,7 @@ def save_checkpoint(
 
 def render(result: dict[str, Any]) -> str:
     lines = [
-        "# Raider.IO 主流副本天赋采样（固定 10 份）",
+        f"# Raider.IO 主流副本天赋采样（目标 {TARGET} 份）",
         "",
         f"- 赛季：{result['season_name']} (`{result['season_slug']}`)",
         f"- 目标：每个专精 × 每个副本固定 {TARGET} 份有效天赋，不做追加采样",
@@ -291,7 +306,7 @@ def render(result: dict[str, Any]) -> str:
         f"- 重试原因：{json.dumps(result['retry_reasons'], ensure_ascii=False, sort_keys=True)}",
         f"- 达标组合：{result['combinations_at_target']}/{result['total_combinations']}",
         "",
-        "| 副本 | 达到10份的专精 | 最低样本 | 有分歧节点的组合 |",
+        f"| 副本 | 达到{TARGET}份的专精 | 最低样本 | 有分歧节点的组合 |",
         "|---|---:|---:|---:|",
     ]
     for dungeon in result["dungeons"]:
@@ -299,13 +314,14 @@ def render(result: dict[str, Any]) -> str:
             f"| {dungeon['name']} | {dungeon['specs_at_target']}/{len(core.SPECS)} | "
             f"{dungeon['minimum_spec_sample']} | {dungeon['combinations_with_variations']} |"
         )
-    lines.extend(["", "完整的推荐导入字符串、10份原始样本和分歧节点位于 JSON 文件中。"])
+    lines.extend(["", "完整的推荐导入字符串、原始样本和分歧节点位于 JSON 文件中。"])
     return "\n".join(lines) + "\n"
 
 
 def main() -> int:
     started = time.monotonic()
     OUT.mkdir(parents=True, exist_ok=True)
+    exporter = TalentExporter.download(cache_path=OUT / "raidbots_talents_live.json")
 
     static = core.request_json(core.STATIC_URL, {"expansion_id": core.EXPANSION_ID}, kind="static-data", v1=True)
     if not isinstance(static, dict):
@@ -337,9 +353,9 @@ def main() -> int:
     completed: list[str] = []
     spec_stats: list[dict[str, Any]] = []
 
-    def enqueue(ranked: list[dict[str, Any]], sid: int, queues: dict[int, deque[core.Candidate]]) -> int:
+    def enqueue(ranked: list[dict[str, Any]], sid: int, queues: dict[int, deque[core.Candidate]], page: int) -> int:
         added = 0
-        for row in ranked:
+        for position, row in enumerate(ranked, 1):
             if not isinstance(row, dict):
                 continue
             ckey = core.character_key(row.get("character") or {})
@@ -356,7 +372,10 @@ def main() -> int:
                 if not isinstance(logged, int) or logged <= 0 or not isinstance(run_id, int) or run_id <= 0:
                     continue
                 attempted[did][sid].add(ckey)
-                queues[did].append(core.Candidate(did, sid, ckey, run_id))
+                rank = row.get("rank")
+                if not isinstance(rank, int) or rank <= 0:
+                    rank = page * core.PAGE_SIZE + position
+                queues[did].append(core.Candidate(did, sid, ckey, run_id, rank))
                 added += 1
         return added
 
@@ -372,7 +391,7 @@ def main() -> int:
                     wave.append(queues[did].popleft())
             if not wave:
                 return
-            futures = [pool.submit(validate, candidate, season_slug, by_id, by_challenge) for candidate in wave]
+            futures = [pool.submit(validate, candidate, season_slug, by_id, by_challenge, exporter) for candidate in wave]
             for future in as_completed(futures):
                 candidate, value = future.result()
                 if value and len(samples[candidate.dungeon_id][sid]) < TARGET:
@@ -412,14 +431,14 @@ def main() -> int:
                     break
                 pages += 1
                 ranked_seen += len(ranked)
-                live_candidates += enqueue(ranked, sid, queues)
+                live_candidates += enqueue(ranked, sid, queues, page)
                 ui = ((payload.get("rankings") or {}).get("ui") or {}) if isinstance(payload, dict) else {}
                 last_page = ui.get("lastPage") if isinstance(ui.get("lastPage"), int) else last_page
                 fill(pool, sid, queues)
 
                 counts = [len(samples[did][sid]) for did in dungeon_ids]
                 print(
-                    f"page={page + 1} filled10={sum(value >= TARGET for value in counts)}/{len(dungeon_ids)} "
+                    f"page={page + 1} filled{TARGET}={sum(value >= TARGET for value in counts)}/{len(dungeon_ids)} "
                     f"min={min(counts)} max={max(counts)}",
                     flush=True,
                 )
@@ -499,7 +518,7 @@ def main() -> int:
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "season_name": season_name,
         "season_slug": season_slug,
-        "strategy": "fixed 10 valid logged-run talents per dungeon/spec; choose a real import string closest to majority nodes; never expand",
+        "strategy": f"up to {TARGET} valid ranked logged-run talents per dungeon/spec; per-hero representatives selected during package build",
         "target_per_dungeon_spec": TARGET,
         "max_pages_per_spec": MAX_PAGES,
         "workers": WORKERS,

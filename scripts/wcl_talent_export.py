@@ -123,11 +123,25 @@ class TalentExporter:
                         shared_nodes.setdefault(node.node_id, node)
 
         self.trees: dict[int, TalentTree] = {}
+        self.hero_entries: dict[int, dict[int, tuple[int, str]]] = {}
+        self.spec_hero_nodes: dict[int, set[int]] = {}
+        comparable_nodes = {
+            node["id"] for raw in raw_trees
+            for group in ("specNodes", "heroNodes", "subTreeNodes")
+            for node in raw.get(group, []) if isinstance(node.get("id"), int)
+        }
         for raw_tree in raw_trees:
             tree = self._parse_tree(raw_tree, shared_nodes)
             if tree.spec_id in self.trees:
                 raise TalentExportError(f"duplicate talent tree for spec {tree.spec_id}")
             self.trees[tree.spec_id] = tree
+            self.spec_hero_nodes[tree.spec_id] = set(tree.full_node_order) & comparable_nodes
+            self.hero_entries[tree.spec_id] = {
+                entry["id"]: (entry["traitSubTreeId"], entry.get("name", str(entry["traitSubTreeId"])))
+                for node in raw_tree.get("subTreeNodes", [])
+                for entry in node.get("entries", [])
+                if isinstance(entry.get("traitSubTreeId"), int)
+            }
         if not self.trees:
             raise TalentExportError("talent data did not contain any specialization trees")
 
@@ -215,6 +229,19 @@ class TalentExporter:
                 raise TalentExportError(f"entry {entry_id} has conflicting ranks")
             selected[entry_id] = rank
         return self.encode(spec_id, selected)
+
+    def specialization_hero_signature(self, text: str, spec_id: int) -> tuple:
+        states = self.decode(text, spec_id)
+        return tuple((node, *state) for node, state in sorted(states.items())
+                     if node in self.spec_hero_nodes[spec_id])
+
+    def hero_subtree(self, text: str, spec_id: int) -> int | None:
+        states = self.decode(text, spec_id)
+        heroes = {self.hero_entries[spec_id][entry][0]
+                  for entry, _ in states.values() if entry in self.hero_entries[spec_id]}
+        if len(heroes) > 1:
+            raise TalentExportError(f"spec {spec_id} selects multiple hero trees")
+        return next(iter(heroes), None)
 
     def encode(self, spec_id: int, selected_entries: dict[int, int]) -> str:
         tree = self.trees.get(spec_id)

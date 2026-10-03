@@ -19,14 +19,13 @@ CONTENT_ADDONS = {
     "QFXTalentData_RaidMythic": "raidMythic",
 }
 PROJECT_ID = 1627870
-MIN_DISPLAY_VERSION = "0.5.0"
+MIN_DISPLAY_VERSION = "0.9.0"
 VERSION_RE = re.compile(r"[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{4}\.[0-9]{2}")
 EXPECTED_MEMBERS = {
     f"{ADDON}/Bootstrap.lua",
     f"{ADDON}/Common.lua",
     f"{ADDON}/Core.lua",
     f"{ADDON}/QFXTalentData.toc",
-    f"{ADDON}/README.md",
     f"{ADDON}/Schemas.lua",
     *{
         f"{addon}/{filename}"
@@ -185,7 +184,7 @@ def build_changelog(package: publisher.Package) -> str:
     return (
         "QFX Talent Data update.\n\n"
         f"Version: {package.version}\n\n"
-        f"Requires QFX Talent Recommendations {MIN_DISPLAY_VERSION} or newer.\n\n"
+        f"Requires QFXTalents {MIN_DISPLAY_VERSION} or newer.\n\n"
         "Global Mythic+ and Heroic/Mythic raid talent database.\n\n"
         "Sources: Raider.IO and Warcraft Logs.\n"
     )

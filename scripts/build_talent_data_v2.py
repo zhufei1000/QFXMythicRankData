@@ -28,11 +28,12 @@ from talent_statistics import (
     pack_statistics_v2,
 )
 from wcl_talent_export import TalentExporter, TalentExportError
+from hero_recommendations import HeroRecommendation, analyze_heroes
 
 
 API_VERSION = 2
 FORMAT_VERSION = 2
-MIN_DISPLAY_VERSION = "0.5.0"
+MIN_DISPLAY_VERSION = "0.9.0"
 BASE_ADDON = "QFXTalentData"
 MODULES = {
     "mythicplus": "QFXTalentData_MythicPlus",
@@ -55,6 +56,8 @@ class Record:
     recommended: str
     sample_count: int
     statistics: TalentStatistics
+    heroes: tuple[HeroRecommendation, ...] = ()
+    hero_statistics: tuple[TalentStatistics | None, ...] = ()
 
 
 def arguments() -> argparse.Namespace:
@@ -71,6 +74,11 @@ def arguments() -> argparse.Namespace:
         type=pathlib.Path,
         default=ROOT / "config/mythic_talents_raids.json",
     )
+    parser.add_argument(
+        "--raid-targets",
+        type=pathlib.Path,
+        help="restrict the raid catalog to this collection's discovered active raids",
+    )
     parser.add_argument("--talent-trees", required=True, type=pathlib.Path)
     parser.add_argument("--output", type=pathlib.Path, default=ROOT / BASE_ADDON)
     parser.add_argument("--zip", dest="zip_path", type=pathlib.Path)
@@ -79,6 +87,32 @@ def arguments() -> argparse.Namespace:
 
 def q(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
+
+
+def raid_manifest(
+    catalog: dict[str, Any],
+    targets: dict[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], dict[int, int]]:
+    if targets is None:
+        return legacy.raid_manifest(catalog)
+    active = targets.get("active_raids")
+    if not isinstance(active, list) or not active:
+        raise ValueError("Active raid discovery is empty; refusing a stale raid catalog")
+    slugs = set()
+    for raid in active:
+        slug = legacy.txt(raid.get("slug")) if isinstance(raid, dict) else ""
+        if not slug:
+            raise ValueError("Active raid discovery contains a raid without a slug")
+        slugs.add(slug)
+    raids, bosses = legacy.raid_manifest({
+        "raids": {
+            slug: row for slug, row in (catalog.get("raids") or {}).items()
+            if slug in slugs
+        },
+    })
+    if not raids:
+        raise ValueError("No active raids match the runtime raid catalog")
+    return raids, bosses
 
 
 def collect_records(
@@ -102,13 +136,11 @@ def collect_records(
         spec_id = legacy.pos(row.get("spec_id"))
         if not dungeon_id or spec_id not in legacy.SPEC_CLASS:
             continue
-        loadouts = legacy.samples(row.get("sample_loadouts"))
-        recommended = legacy.txt(row.get("recommended_loadout"))
-        if not loadouts:
+        raw_samples = row.get("sample_loadouts")
+        if not isinstance(raw_samples, list) or not raw_samples:
             continue
-        if recommended not in loadouts:
-            recommended = loadouts[0]
         try:
+            loadouts, recommended, heroes = analyze_heroes(exporter, spec_id, raw_samples)
             statistics = analyze_statistics(
                 exporter,
                 spec_id,
@@ -129,6 +161,9 @@ def collect_records(
             recommended=recommended,
             sample_count=len(loadouts),
             statistics=statistics,
+            heroes=heroes,
+            hero_statistics=tuple(analyze_statistics(exporter, spec_id, hero.loadouts, hero.recommended)
+                                  if hero.recommended else None for hero in heroes),
         ))
         spec_names.setdefault(
             spec_id,
@@ -152,15 +187,11 @@ def collect_records(
             raid_id = boss_to_raid.get(boss_id or -1)
             if not boss_id or not raid_id or spec_id not in legacy.SPEC_CLASS:
                 continue
-            loadouts = legacy.samples(
-                row.get("samples") if isinstance(row.get("samples"), list) else []
-            )
-            recommended = legacy.txt(row.get("recommended_loadout"))
-            if not loadouts:
+            raw_samples = row.get("samples")
+            if not isinstance(raw_samples, list) or not raw_samples:
                 continue
-            if recommended not in loadouts:
-                recommended = loadouts[0]
             try:
+                loadouts, recommended, heroes = analyze_heroes(exporter, spec_id, raw_samples)
                 statistics = analyze_statistics(
                     exporter,
                     spec_id,
@@ -181,6 +212,9 @@ def collect_records(
                 recommended=recommended,
                 sample_count=len(loadouts),
                 statistics=statistics,
+                heroes=heroes,
+                hero_statistics=tuple(analyze_statistics(exporter, spec_id, hero.loadouts, hero.recommended)
+                                      if hero.recommended else None for hero in heroes),
             ))
             spec_names.setdefault(
                 spec_id,
@@ -246,6 +280,8 @@ def manifest_file(data: dict[str, Any]) -> str:
         f"    [{spec_id}]={q(name)},"
         for spec_id, name in sorted(data["specNames"].items())
     )
+    output.extend(["  },", "  heroNames={"])
+    output.extend(f"    [{hero_id}]={q(name)}," for hero_id, name in sorted(data.get("heroNames", {}).items()))
     output.extend(["  },", "  raidDifficulties={"])
     output.extend(
         f"    [{difficulty_id}]={q(name)},"
@@ -324,6 +360,7 @@ def module_file(
     statistics_blob_parts: list[str] = []
     recommendation_blob_parts: list[str] = []
     by_spec: dict[int, list[int]] = defaultdict(list)
+    hero_records: dict[int, dict[int, list[list[int]]]] = defaultdict(dict)
     statistics_offset = 1
     recommendation_offset = 1
     module_records = sorted(
@@ -339,13 +376,26 @@ def module_file(
         ),
     )
     for record in module_records:
+        primary_statistics = record.statistics
+        if record.heroes:
+            if len(record.hero_statistics) != len(record.heroes):
+                raise ValueError("hero recommendations and statistics are not aligned")
+            for hero, stats in zip(record.heroes, record.hero_statistics):
+                if hero.recommended and (stats is None or stats.valid_samples != hero.sample_count):
+                    raise ValueError("node statistics must use the hero's own sample count")
+            primary_statistics = record.hero_statistics[0]
+            if primary_statistics is None:
+                raise ValueError("primary hero recommendation has no node statistics")
         encoded = pack_statistics_v2(
-            record.statistics,
+            primary_statistics,
             schemas[record.spec_id],
         )
         stats_length = len(encoded)
         recommendation_length = len(record.recommended)
+        base_stats_offset = statistics_offset
+        base_recommendation_offset = recommendation_offset
         row = by_spec[record.spec_id]
+        record_index = len(row) + 1
         if kind == "mythicplus":
             row.extend([
                 record.key1,
@@ -369,6 +419,25 @@ def module_file(
         recommendation_blob_parts.append(record.recommended)
         statistics_offset += stats_length
         recommendation_offset += recommendation_length
+        if record.heroes:
+            variants = []
+            for hero, stats in zip(record.heroes, record.hero_statistics):
+                if hero.recommended == record.recommended and stats:
+                    variants.append([hero.subtree_id, hero.sample_count, base_recommendation_offset,
+                                     recommendation_length, base_stats_offset, stats_length,
+                                     hero.source_rank or 0])
+                elif hero.recommended and stats:
+                    variant_stats = pack_statistics_v2(stats, schemas[record.spec_id])
+                    variants.append([hero.subtree_id, hero.sample_count, recommendation_offset,
+                                     len(hero.recommended), statistics_offset, len(variant_stats),
+                                     hero.source_rank or 0])
+                    recommendation_blob_parts.append(hero.recommended)
+                    statistics_blob_parts.append(variant_stats)
+                    recommendation_offset += len(hero.recommended)
+                    statistics_offset += len(variant_stats)
+                else:
+                    variants.append([hero.subtree_id, 0, 0, 0, 0, 0, 0])
+            hero_records[record.spec_id][record_index] = variants
 
     output = [
         "-- Generated compact content module. Do not edit manually.",
@@ -380,6 +449,7 @@ def module_file(
         f"  kind={q(kind)},",
         f"  dataVersion={q(version)},",
         f"  stride={6 if kind == 'mythicplus' else 7},",
+        "  sampleTarget=50,",
         f"  statsBlob={q(''.join(statistics_blob_parts))},",
         f"  recommendationBlob={q(''.join(recommendation_blob_parts))},",
         "  records={",
@@ -388,6 +458,13 @@ def module_file(
         output.append(
             f"    [{spec_id}]={{{','.join(map(str, values))}}},"
         )
+    output.extend(["  },", "  heroRecords={"])
+    for spec_id, indexed in sorted(hero_records.items()):
+        output.append(f"    [{spec_id}]={{")
+        for index, variants in sorted(indexed.items()):
+            packed = ",".join("{" + ",".join(map(str, values)) + "}" for values in variants)
+            output.append(f"      [{index}]={{{packed}}},")
+        output.append("    },")
     output.extend([
         "  },",
         "}",
@@ -519,7 +596,7 @@ def write_package(
         ) as archive:
             for addon_name, path in addon_paths.items():
                 for file_path in sorted(path.rglob("*")):
-                    if file_path.is_file():
+                    if file_path.is_file() and file_path.suffix in {".lua", ".toc"}:
                         archive.write(
                             file_path,
                             f"{addon_name}/{file_path.relative_to(path).as_posix()}",
@@ -547,8 +624,10 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         mythic_plus,
         legacy.load(args.dungeon_locales),
     )
-    raids, boss_to_raid = legacy.raid_manifest(
-        legacy.load(args.raid_locales)
+    targets_path = getattr(args, "raid_targets", None)
+    raids, boss_to_raid = raid_manifest(
+        legacy.load(args.raid_locales),
+        legacy.load(targets_path) if targets_path else None,
     )
     exporter = TalentExporter.from_path(args.talent_trees)
     spec_names, records, difficulties = collect_records(
@@ -570,6 +649,8 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "raids": raids,
         "diffs": difficulties,
         "specNames": spec_names,
+        "heroNames": {hero_id: name for entries in exporter.hero_entries.values()
+                      for hero_id, name in entries.values()},
     }
     result = write_package(
         args.output,

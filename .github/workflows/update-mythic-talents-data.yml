@@ -2,8 +2,8 @@ name: Update QFX Talent Data
 
 on:
   schedule:
-    - cron: "17 4 * * *"
-    - cron: "17 16 * * *"
+    # 09:19 Asia/Shanghai (UTC+8), once per day.
+    - cron: "19 1 * * *"
   workflow_dispatch:
     inputs:
       wcl_max_pages:
@@ -11,31 +11,6 @@ on:
         required: true
         type: string
         default: "5"
-  push:
-    branches:
-      - main
-    paths:
-      - scripts/collect_mythicplus_talents.py
-      - scripts/collect_raid_talents.py
-      - scripts/build_talent_data.py
-      - scripts/build_talent_data_v2.py
-      - scripts/probe_raiderio_spec_dungeon_v2.py
-      - scripts/probe_raiderio_spec_dungeon_v4.py
-      - scripts/probe_wcl_raid_talents_v1.py
-      - scripts/discover_raid_targets.py
-      - scripts/wcl_talent_export.py
-      - scripts/talent_statistics.py
-      - scripts/publish_talent_curseforge.py
-      - scripts/templates/qfx_talent_data/**
-      - tests/test_talent_data.py
-      - tests/test_talent_data_v2.py
-      - tests/test_talent_statistics.py
-      - tests/test_wcl_talent_export.py
-      - tests/test_talent_curseforge_publish.py
-      - tests/test_discover_raid_targets.py
-      - config/mythic_talents_dungeons.json
-      - config/mythic_talents_raids.json
-      - .github/workflows/update-mythic-talents-data.yml
 permissions:
   contents: write
 
@@ -75,6 +50,8 @@ jobs:
         run: |
           python -m py_compile \
             scripts/collect_mythicplus_talents.py \
+            scripts/collect_talents_parallel.py \
+            scripts/hero_recommendations.py \
             scripts/collect_raid_talents.py \
             scripts/build_talent_data.py \
             scripts/build_talent_data_v2.py \
@@ -105,57 +82,15 @@ jobs:
             fi
           done
 
-      - name: Collect ten global Mythic+ talent samples
+      - name: Collect 50 talent samples in parallel across sites
         env:
           RAIDERIO_ACCESS_KEY: ${{ secrets.RAIDERIO_ACCESS_KEY }}
-        run: python scripts/collect_mythicplus_talents.py
-
-      - name: Discover active raid zones
-        env:
           WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
           WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
-        run: |
-          set -euo pipefail
-          python scripts/discover_raid_targets.py \
-            --output artifacts/raid_targets.json \
-            --fallback-zones 46,50
-          python - <<'PY'
-          import json
-          import pathlib
-          targets = json.loads(pathlib.Path("artifacts/raid_targets.json").read_text(encoding="utf-8"))["targets"]
-          zones = sorted({int(target["zone_id"]) for target in targets})
-          pathlib.Path("artifacts/raid_zones.txt").write_text(" ".join(map(str, zones)), encoding="utf-8")
-          print("discovered raid zones:", zones)
-          PY
-
-      - name: Collect raid talents for discovered zones
-        env:
-          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
-          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
-          WCL_TARGET: "10"
+          MYTHICPLUS_TARGET: "50"
+          WCL_TARGET: "50"
           WCL_MAX_PAGES: ${{ github.event_name == 'workflow_dispatch' && inputs.wcl_max_pages || '5' }}
-        run: |
-          set -euo pipefail
-          zones="$(cat artifacts/raid_zones.txt)"
-          if [[ -z "${zones}" ]]; then
-            echo "::error::No raid zones discovered and no fallback was provided."
-            exit 1
-          fi
-          for zone in ${zones}; do
-            python scripts/collect_raid_talents.py \
-              --zone "${zone}" \
-              --difficulty 4 \
-              --output "artifacts/wcl_zone_${zone}_heroic.json" \
-              --markdown "artifacts/wcl_zone_${zone}_heroic.md" \
-              --checkpoint "artifacts/wcl_zone_${zone}_heroic_checkpoint.json"
-            python scripts/collect_raid_talents.py \
-              --zone "${zone}" \
-              --difficulty 5 \
-              --output "artifacts/wcl_zone_${zone}_mythic.json" \
-              --markdown "artifacts/wcl_zone_${zone}_mythic.md" \
-              --checkpoint "artifacts/wcl_zone_${zone}_mythic_checkpoint.json"
-          done
-          ls artifacts/wcl_zone_*.json
+        run: python scripts/collect_talents_parallel.py
 
       - name: Generate split load-on-demand QFXTalentData addons
         id: package
@@ -167,7 +102,6 @@ jobs:
             QFXTalentData_MythicPlus \
             QFXTalentData_RaidHeroic \
             QFXTalentData_RaidMythic
-          python -c "import pathlib, sys; sys.path.insert(0, 'scripts'); from wcl_talent_export import TalentExporter; TalentExporter.download(cache_path=pathlib.Path('artifacts/raidbots_talents_live.json'))"
           raid_args=()
           for file in artifacts/wcl_zone_*_heroic.json artifacts/wcl_zone_*_mythic.json; do
             if [[ -f "${file}" ]]; then
@@ -177,6 +111,8 @@ jobs:
           python scripts/build_talent_data_v2.py \
             --input artifacts/raiderio_mainstream_talents_v4.json \
             "${raid_args[@]}" \
+            --raid-locales artifacts/active_raid_catalog.json \
+            --raid-targets artifacts/raid_targets.json \
             --talent-trees artifacts/raidbots_talents_live.json \
             --output QFXTalentData \
             --zip "artifacts/QFXTalentData.zip"
@@ -197,6 +133,8 @@ jobs:
             tests/test_talent_data_v2.py \
             tests/test_talent_statistics.py \
             tests/test_wcl_talent_export.py \
+            tests/test_hero_recommendations.py \
+            tests/test_collect_talents_parallel.py \
             tests/test_talent_curseforge_publish.py \
             tests/test_discover_raid_targets.py
           find \
@@ -209,22 +147,22 @@ jobs:
           test -f QFXTalentData/Schemas.lua
           test ! -f QFXTalentData/SpecLoaders.lua
           test ! -d QFXTalentData/Classes
-          grep -q '^## X-QFX-Min-Display-Version: 0.5.0$' \
+          grep -q '^## X-QFX-Min-Display-Version: 0.9.0$' \
             QFXTalentData/QFXTalentData.toc
-          grep -q 'minDisplayVersion="0.5.0"' QFXTalentData/Common.lua
+          grep -q 'minDisplayVersion="0.9.0"' QFXTalentData/Common.lua
           for addon in \
             QFXTalentData_MythicPlus \
             QFXTalentData_RaidHeroic \
             QFXTalentData_RaidMythic; do
             grep -q '^## LoadOnDemand: 1$' "${addon}/${addon}.toc"
             grep -q '^## Dependencies: QFXTalentData$' "${addon}/${addon}.toc"
-            grep -q '^## X-QFX-Min-Display-Version: 0.5.0$' \
+            grep -q '^## X-QFX-Min-Display-Version: 0.9.0$' \
               "${addon}/${addon}.toc"
             grep -q 'statsBlob=' "${addon}/Data.lua"
             grep -q 'recommendationBlob=' "${addon}/Data.lua"
             ! grep -q 'samples' "${addon}/Data.lua"
           done
-          test "$(unzip -Z1 "${{ steps.package.outputs.path }}" | grep -c -E '^[^/]+/[^/]+$')" -eq 12
+          test "$(unzip -Z1 "${{ steps.package.outputs.path }}" | grep -c -E '^[^/]+/[^/]+$')" -eq 11
           if ls artifacts/wcl_zone_50_*.json >/dev/null 2>&1; then
             grep -q 'slug="sporefall"' QFXTalentData/Common.lua
             grep -q 'id=3159' QFXTalentData/Common.lua
@@ -344,6 +282,7 @@ jobs:
             artifacts/raiderio_mainstream_talents_v4.md
             artifacts/raidbots_talents_live.json
             artifacts/raid_targets.json
+            artifacts/active_raid_catalog.json
             artifacts/raid_zones.txt
             artifacts/wcl_zone_*_heroic.json
             artifacts/wcl_zone_*_heroic.md
