@@ -276,3 +276,10 @@ def test_production_consumable_mappings_include_DBC_evidence_and_quality():
         assert len(row["evidence"]["relationSHA256"])==64
         selected=next(x for x in row["items"] if x.get("recommended"))
         assert selected["itemID"]==expected and selected["quality"]==2
+
+
+def test_single_player_probe_avoids_unneeded_ranking_queries():
+    encounters=[{"id":i} for i in range(8)]
+    assert len(collector.ranked_encounters(encounters,71,1))==1
+    assert len(collector.ranked_encounters(encounters,71,50))==8
+    assert collector.ranked_encounters(encounters,71,1)!=collector.ranked_encounters(encounters,72,1)

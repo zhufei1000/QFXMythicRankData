@@ -43,6 +43,15 @@ def iso(ms):
     return datetime.fromtimestamp(ms/1000,timezone.utc).isoformat()
 
 
+def ranked_encounters(encounters,spec_id,target):
+    if not encounters:return []
+    offset=spec_id%len(encounters)
+    ordered=encounters[offset:]+encounters[:offset]
+    # A one-player coverage probe does not need every boss's ranking page up front.
+    # The full 50-player collection retains all encounters for diversity.
+    return ordered[:max(1,target)] if target<4 else ordered
+
+
 def authorization_record(path,now):
     if not path or not path.exists() or not path.stat().st_size:raise ValueError("authorization_required")
     try:record=json.loads(path.read_text(encoding="utf-8"))
@@ -225,7 +234,7 @@ def run(opt):
             partitions=[p for p in zone["partitions"] if p.get("default")]
             if len(partitions)!=1:raise ValueError("partition_ambiguous")
             partition=partitions[0]["id"]
-            encounters=zone["encounters"]
+            encounters=ranked_encounters(zone["encounters"],spec["id"],opt.target)
             for page in range(state.get("page",1),opt.max_pages+1):
                 if len(state["samples"])>=opt.target:break
                 candidates=[]
