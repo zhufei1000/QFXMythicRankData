@@ -165,3 +165,42 @@ jobs:
                                       print("GEAR_FIRST_SLOT",key,list(value.keys())[:32] if isinstance(value,dict) else str(value)[:150],flush=True)
               if status!=200:print("COMP_ERROR",i,str(comp)[:180],flush=True)
           PY
+
+      - name: Compare CN raid-comps access across different guild privacy settings
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,urllib.parse,urllib.request,urllib.error
+          BASE="https://raider.io"
+          def req(path,p):
+              url=BASE+path+"?"+urllib.parse.urlencode(p)
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(url,headers={"User-Agent":"GearInspect-CN-RaidComp-AccessTest/1.0","Accept":"application/json"}),timeout=13) as r:return r.status,json.load(r)
+              except urllib.error.HTTPError as e:return e.code,{"error":e.read(120).decode("utf-8","replace")}
+              except Exception as e:return -1,{"error":type(e).__name__}
+          raid="the-venomous-abyss";difficulty="mythic"
+          rs,rank=req("/api/v1/raiding/raid-rankings",{"raid":raid,"difficulty":difficulty,"region":"cn","limit":12,"page":0})
+          for idx,entry in enumerate((rank.get("raidRankings") or [])[:8]):
+              guild=entry.get("guild") or {}
+              realm=(guild.get("realm") or {}).get("slug")
+              name=guild.get("name")
+              privacy=entry.get("guildPrivacy") or {}
+              print("PRIVACY",idx,name,"raidComps",privacy.get("raidComps"),"raidPulls",privacy.get("raidPulls"),"restricted",privacy.get("wereRaidCompsRestricted"),flush=True)
+              if not name or not realm:continue
+              p={"raid":raid,"boss":"nekzali-the-soulcoiler","difficulty":difficulty,"region":"cn","realm":realm,"guild":name}
+              status,data=req("/api/v1/live-tracking/guild/boss-pulls",p)
+              kills=[(row.get("details") or {}) for row in (data.get("pulls") or []) if (row.get("details") or {}).get("is_success") is True]
+              print("PULLS",idx,"HTTP",status,"kills",len(kills),flush=True)
+              if not kills:continue
+              q={"raid":raid,"id":kills[-1].get("id"),"difficulty":difficulty,"region":"cn","realm":realm,"guild":name}
+              status,comp=req("/api/v1/live-tracking/guild/raid-comps",q)
+              print("COMP_RESULT",idx,"HTTP",status,"keys",list(comp)[:20],flush=True)
+              if status==200:
+                  print("SUCCESS_COMP_SHAPE",idx,[(k,len(v)) for k,v in comp.items() if isinstance(v,list)],flush=True)
+                  for k,v in comp.items():
+                      if isinstance(v,list) and v and isinstance(v[0],dict):
+                          print("SUCCESS_FIRST_MEMBER_KEYS",list(v[0])[:32],flush=True)
+                          for n,val in v[0].items():
+                              if isinstance(val,dict) and ("gear" in n.lower() or "loadout" in n.lower()):print("SUCCESS_GEAR_KEYS",n,list(val)[:32],flush=True)
+                  break
+          PY
