@@ -20,11 +20,15 @@ META="query { worldData { zones { id name frozen difficulties { id name } partit
 RANKS="""query($id:Int!,$difficulty:Int!,$class:String!,$spec:String!,$page:Int!,$partition:Int!) {
  worldData { encounter(id:$id) { characterRankings(difficulty:$difficulty,className:$class,specName:$spec,page:$page,partition:$partition,includeCombatantInfo:false) } }
  """+RATE+" }"
-REPORT="""query($code:String!,$fights:[Int]) { reportData { report(code:$code) {
- startTime zone { id } fights(fightIDs:$fights) { id encounterID difficulty kill startTime endTime keystoneLevel keystoneTime }
- masterData { actors { id name type server } }
- combatants:events(fightIDs:$fights,dataType:CombatantInfo,limit:10000,translate:false) { data nextPageTimestamp }
- } } """+RATE+" }"
+REPORT_FIGHTS="""query($code:String!,$fights:[Int]) { reportData { report(code:$code) {
+  startTime zone { id } fights(fightIDs:$fights) { id encounterID difficulty kill startTime endTime keystoneLevel keystoneTime }
+  masterData { actors { id name type server } }
+  } } """+RATE+" }"
+# Heavy CombatantInfo scan, issued only for fights that passed validation.
+REPORT_COMBATANTS="""query($code:String!,$fights:[Int]) { reportData { report(code:$code) {
+  combatants:events(fightIDs:$fights,dataType:CombatantInfo,limit:10000,translate:false) { data nextPageTimestamp }
+  } } """+RATE+" }"
+REPORT=REPORT_FIGHTS
 CONSUMABLES="""query($code:String!,$fights:[Int],$actor:Int!,$start:Float) { reportData { report(code:$code) {
  buffTable:table(fightIDs:$fights,dataType:Buffs,sourceID:$actor,translate:true)
  casts:events(fightIDs:$fights,dataType:Casts,sourceID:$actor,startTime:$start,limit:10000,translate:false) { data nextPageTimestamp }
@@ -52,6 +56,40 @@ def ranked_encounters(encounters,spec_id,target,page=1):
     if target<4:
         return [(ordered[(page-1)%len(ordered)],(page-1)//len(ordered)+1)]
     return [(encounter,page) for encounter in ordered]
+
+
+def batched_rankings(client,pairs,difficulty,class_name,spec_name,partition):
+    """Fetch several encounter ranking pages in one GraphQL request.
+
+    Points charged are the same sum as individual queries, but one round
+    trip replaces up to 8, which cuts wall time and retry amplification.
+    Falls back to single queries if the batched shape is unavailable.
+    """
+    if len(pairs)<=1:
+        encounter,ranking_page=pairs[0]
+        raw=client.query(RANKS,{"id":encounter["id"],"difficulty":difficulty,"class":class_name,"spec":spec_name,"page":ranking_page,"partition":partition},kind="rankings").get("worldData",{}).get("encounter",{}).get("characterRankings") or {}
+        if isinstance(raw,str):raw=json.loads(raw)
+        return [(raw,encounter["id"])]
+    decls=["$difficulty:Int!","$class:String!","$spec:String!","$partition:Int!"]
+    fields=[]
+    variables={"difficulty":difficulty,"class":class_name,"spec":spec_name,"partition":partition}
+    for index,(encounter,ranking_page) in enumerate(pairs):
+        decls.append(f"$id{index}:Int!")
+        decls.append(f"$page{index}:Int!")
+        variables[f"id{index}"]=encounter["id"]
+        variables[f"page{index}"]=ranking_page
+        fields.append(f'e{index}: encounter(id:$id{index}) {{ characterRankings(difficulty:$difficulty,className:$class,specName:$spec,page:$page{index},partition:$partition,includeCombatantInfo:false) }}')
+    query="query("+",".join(decls)+") { worldData { "+" ".join(fields)+" } "+RATE+" }"
+    data=client.query(query,variables,kind="rankings")
+    world=data.get("worldData",{})
+    if not any(k.startswith("e") and k[1:].isdigit() for k in world):
+        raise ValueError("batched_rankings_unsupported")
+    out=[]
+    for index,(encounter,_) in enumerate(pairs):
+        raw=((world.get(f"e{index}") or {}).get("characterRankings")) or {}
+        if isinstance(raw,str):raw=json.loads(raw)
+        out.append((raw,encounter["id"]))
+    return out
 
 
 def authorization_record(path,now):
@@ -240,45 +278,69 @@ def run(opt):
             if len(partitions)!=1:raise ValueError("partition_ambiguous")
             partition=partitions[0]["id"]
             encounters=zone["encounters"]
-            for page in range(state.get("page",1),opt.max_pages+1):
+            page_limit=getattr(opt,"max_pages_raid" if mode=="raid" else "max_pages_mythic_plus",None) or opt.max_pages
+            for page in range(state.get("page",1),page_limit+1):
                 if len(state["samples"])>=opt.target:break
+                pairs=ranked_encounters(encounters,spec["id"],opt.target,page)
+                try:
+                    ranked=batched_rankings(client,pairs,diff["id"],spec["className"],spec["specName"],partition)
+                except (ValueError,RuntimeError,KeyError,TypeError):
+                    ranked=[]
+                    for encounter,ranking_page in pairs:
+                        raw=client.query(RANKS,{"id":encounter["id"],"difficulty":diff["id"],"class":spec["className"],"spec":spec["specName"],"page":ranking_page,"partition":partition},kind="rankings").get("worldData",{}).get("encounter",{}).get("characterRankings") or {}
+                        if isinstance(raw,str):raw=json.loads(raw)
+                        ranked.append((raw,encounter["id"]))
                 candidates=[]
                 # Round-robin across encounters instead of exhausting the first boss.
-                for encounter,ranking_page in ranked_encounters(encounters,spec["id"],opt.target,page):
-                    raw=client.query(RANKS,{"id":encounter["id"],"difficulty":diff["id"],"class":spec["className"],"spec":spec["specName"],"page":ranking_page,"partition":partition},kind="rankings").get("worldData",{}).get("encounter",{}).get("characterRankings") or {}
-                    if isinstance(raw,str):raw=json.loads(raw)
+                for raw,eid in ranked:
                     rows=raw.get("rankings",[])
                     diag["schemaShapes"].setdefault("rankingKeys",sorted(rows[0]) if rows else [])
                     if rows and isinstance(rows[0].get("server"),dict):diag["schemaShapes"].setdefault("serverKeys",sorted(rows[0]["server"]))
                     if mode=="mythic_plus": rows=sorted(rows,key=lambda r:r.get("hardModeLevel") or 0,reverse=True)
-                    candidates.append([(r,encounter["id"]) for r in rows])
+                    candidates.append([(r,eid) for r in rows])
                 interleaved=[]
                 for index in range(max((len(x) for x in candidates),default=0)):
                     interleaved.extend(x[index] for x in candidates if index<len(x))
-                # Group reports in small bounded batches; read CombatantInfo for all selected fights once.
+                # Group reports in small bounded batches; resolve canonical IDs before
+                # any report query so duplicates never pay for fights or CombatantInfo.
                 for batch_start in range(0,len(interleaved),12):
                     if len(state["samples"])>=opt.target:break
                     by_report=defaultdict(list)
                     for row,eid in interleaved[batch_start:batch_start+12]:
                         try:code,fight=context(row)
                         except ValueError as e:failures[str(e)]+=1;continue
-                        by_report[code].append((row,eid,fight))
+                        try:
+                            cid=canonical_id(client,row,season["region"])
+                        except ValueError as e:failures[str(e)]+=1;continue
+                        identity=hashlib.sha256((str(season["seasonID"])+":"+cid).encode()).hexdigest()
+                        if identity in state["samples"]:failures["duplicate_canonical_id"]+=1;continue
+                        by_report[code].append((row,eid,fight,identity))
                     for code,group in by_report.items():
                         if len(state["samples"])>=opt.target:break
-                        report=(client.query(REPORT,{"code":code,"fights":sorted({x[2] for x in group})},kind="combatants").get("reportData") or {}).get("report") or {}
-                        diag["schemaShapes"].setdefault("reportKeys",sorted(report))
-                        for row,eid,fight in group:
-                            if len(state["samples"])>=opt.target:break
+                        meta=(client.query(REPORT_FIGHTS,{"code":code,"fights":sorted({x[2] for x in group})},kind="fights").get("reportData") or {}).get("report") or {}
+                        diag["schemaShapes"].setdefault("reportKeys",sorted(meta))
+                        valid=[]
+                        for row,eid,fight,identity in group:
                             try:
-                                f=next((f for f in report.get("fights",[]) if f["id"]==fight),None)
+                                f=next((f for f in meta.get("fights",[]) if f["id"]==fight),None)
                                 if not f:raise ValueError("fight_unavailable")
                                 if mode=="raid" and (not f.get("kill") or f.get("difficulty")!=diff["id"] or f.get("encounterID")!=eid):raise ValueError("not_mythic_kill")
                                 if mode=="mythic_plus" and (not f.get("kill") or not f.get("keystoneLevel") or not f.get("keystoneTime") or f.get("encounterID")!=eid):raise ValueError("not_completed_keystone")
-                                absolute=report.get("startTime",0)+f["startTime"]
+                                absolute=meta.get("startTime",0)+f["startTime"]
                                 date=iso(absolute)
                                 if not window_start<=datetime.fromisoformat(date)<=now:raise ValueError("outside_season_window")
-                                actor=actor_id(row,report)
-                                raw_events=(report.get("combatants") or {}).get("data",[])
+                                actor=actor_id(row,meta)
+                                valid.append((row,eid,fight,identity,date,actor))
+                            except (ValueError,RuntimeError,KeyError,TypeError) as e:
+                                reason=str(e) if isinstance(e,ValueError) else type(e).__name__
+                                failures[reason]+=1
+                        if not valid:continue
+                        # CombatantInfo is the expensive scan; fetch once for validated fights only.
+                        report=(client.query(REPORT_COMBATANTS,{"code":code,"fights":sorted({x[2] for x in valid})},kind="combatants").get("reportData") or {}).get("report") or {}
+                        raw_events=(report.get("combatants") or {}).get("data",[])
+                        for row,eid,fight,identity,date,actor in valid:
+                            if len(state["samples"])>=opt.target:break
+                            try:
                                 combatants=[e for e in raw_events if e.get("sourceID")==actor and e.get("fight")==fight and e.get("specID")==spec["id"]]
                                 if len(combatants)!=1 or (report.get("combatants") or {}).get("nextPageTimestamp") is not None:raise ValueError("combatant_not_unique_or_truncated")
                                 combatant=combatants[0]
@@ -287,9 +349,6 @@ def run(opt):
                                 if rawgear:diag["schemaShapes"].setdefault("gearKeys",sorted(next((x for x in rawgear if isinstance(x,dict) and x.get("id")),{})))
                                 stats=ratings(combatant)
                                 gear,scheme=normalize_gear(rawgear,items,bonuses,spec["id"])
-                                cid=canonical_id(client,row,season["region"])
-                                identity=hashlib.sha256((str(season["seasonID"])+":"+cid).encode()).hexdigest()
-                                if identity in state["samples"]: failures["duplicate_canonical_id"]+=1;continue
                                 con=consume(client,code,fight,actor,combatant,opt.max_cast_pages)
                                 state["samples"][identity]={"stats":stats,"gear":gear,"date":date,"encounterID":eid,"partition":partition,"slotSchema":scheme,"consumables":con}
                                 print(f'{spec["id"]} {mode}: {len(state["samples"])}/{opt.target}',flush=True)
@@ -318,7 +377,9 @@ def main():
     p.add_argument("--target",type=int,default=50)
     p.add_argument("--max-tasks",type=int,default=6)
     p.add_argument("--max-pages",type=int,default=3)
-    p.add_argument("--max-cast-pages",type=int,default=6)
+    p.add_argument("--max-pages-raid",type=int,default=None,help="Raid ranking pages; defaults to --max-pages")
+    p.add_argument("--max-pages-mythic-plus",type=int,default=None,help="Mythic+ ranking pages; defaults to --max-pages")
+    p.add_argument("--max-cast-pages",type=int,default=2)
     p.add_argument("--max-seconds",type=int,default=300)
     p.add_argument("--authorization",type=Path,help="RPGLogs approval record covering collection, caching and aggregation")
     p.add_argument("--internal-test",action="store_true",help="User-requested local testing, short-lived cache, no public distribution")

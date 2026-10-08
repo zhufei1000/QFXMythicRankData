@@ -127,14 +127,23 @@ def merge_run(run_id):
 
 
 def dispatch(spec_ids,target):
+    # Avoid wasting a full Actions dispatch when we know quota is still out:
+    # a previous pause records resumeAfter in progress.json; sleep locally first.
+    progress=read(OUTPUT/"progress.json",{})
+    resume_after=progress.get("resumeAfter")
+    if isinstance(resume_after,(int,float)) and resume_after>time.time():
+        wait=min(int(resume_after-time.time()),3700)
+        print(f"Quota known exhausted; local controller sleeps {wait} seconds before dispatch",flush=True)
+        time.sleep(wait)
     master=read(OUTPUT/"checkpoint.json",None)
     if master:
         subset={**master,"tasks":{key:value for key,value in master["tasks"].items() if int(key.split(":")[0]) in spec_ids}}
         encoded=base64.b64encode(zlib.compress(json.dumps(subset,separators=(",",":")).encode(),9)).decode()
-        if len(encoded)>47000:raise RuntimeError("checkpoint_secret_size_limit: use one specialization per batch")
+        if len(encoded)>47000:raise RuntimeError("checkpoint_secret_size_limit: split batch or implement artifact resume")
         gh("secret","set",SECRET,input=encoded)
     else:gh("secret","delete",SECRET,check=False)
-    inputs={"test_data":"false","specs":",".join(map(str,spec_ids)),"mode":"both","target":str(target),"max_pages":"10","quota_reserve":"0.15" if target==1 else "0.25",
+    inputs={"test_data":"false","specs":",".join(map(str,spec_ids)),"mode":"both","target":str(target),"max_pages":"10",
+            "max_pages_raid":"10","max_pages_mythic_plus":"6","max_cast_pages":"2","quota_reserve":"0.15",
             "recipient_public_key":base64.b64encode((PRIVATE/"recipient-public.pem").read_bytes()).decode()}
     result=gh("workflow","run","probe-wcl-gear.yml","--ref","feature/gear-recommendations","--json",input=json.dumps(inputs))
     found=re.search(r"/runs/(\d+)",result)

@@ -218,6 +218,7 @@ def test_checkpoint_resume_after_quota_pause_preserves_page_and_deduplicates(tmp
             query_calls.append((kind,variables))
             if kind=="metadata":return {"worldData":{"zones":[zone]}}
             if kind=="rankings":return {"worldData":{"encounter":{"characterRankings":{"rankings":rows}}}}
+            if kind=="fights":return {"reportData":{"report":{k:report[k] for k in ("startTime","fights","masterData") if k in report}}}
             if kind=="combatants":return {"reportData":{"report":report}}
             raise AssertionError(kind)
         def metrics(self):return {"apiRequests":self.calls,"elapsedSeconds":0,"pointsConsumedEstimate":0}

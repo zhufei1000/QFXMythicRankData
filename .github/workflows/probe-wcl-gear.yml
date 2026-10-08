@@ -25,8 +25,17 @@ on:
         description: Base64 RSA public key for encrypted internal real-data results
         default: ''
       max_pages:
-        description: Maximum ranking pages per encounter
+        description: Maximum ranking pages per encounter (fallback for both modes)
         default: '10'
+      max_pages_raid:
+        description: Maximum raid ranking pages
+        default: '10'
+      max_pages_mythic_plus:
+        description: Maximum Mythic+ ranking pages (keystone-sorted, fewer needed)
+        default: '6'
+      max_cast_pages:
+        description: Maximum consumable cast pages per sample (page 0 covers flask/food)
+        default: '2'
       quota_reserve:
         description: Fraction of hourly points kept unused (0.15 to 0.5)
         default: '0.25'
@@ -76,6 +85,9 @@ jobs:
           MODE: ${{ inputs.mode }}
           TARGET: ${{ inputs.target }}
           MAX_PAGES: ${{ inputs.max_pages }}
+          MAX_PAGES_RAID: ${{ inputs.max_pages_raid }}
+          MAX_PAGES_MYTHIC_PLUS: ${{ inputs.max_pages_mythic_plus }}
+          MAX_CAST_PAGES: ${{ inputs.max_cast_pages }}
           QUOTA_RESERVE: ${{ inputs.quota_reserve }}
           RECIPIENT_PUBLIC_KEY: ${{ inputs.recipient_public_key }}
           INTERNAL_CHECKPOINT: ${{ secrets.QFX_GEAR_TEST_CHECKPOINT }}
@@ -84,7 +96,7 @@ jobs:
           python -c 'import os,base64,pathlib; from cryptography.hazmat.primitives import serialization; p=pathlib.Path("artifacts/gear/recipient.pem"); p.write_bytes(base64.b64decode(os.environ["RECIPIENT_PUBLIC_KEY"])); serialization.load_pem_public_key(p.read_bytes())'
           python -c 'import os,base64,zlib,pathlib; data=os.environ.get("INTERNAL_CHECKPOINT"); data and pathlib.Path("artifacts/gear/checkpoint.json").write_bytes(zlib.decompress(base64.b64decode(data)))'
           set +e
-          python scripts/collect_gear_recommendations.py --specs "$SPECS" --mode "$MODE" --target "$TARGET" --max-tasks 6 --max-seconds 780 --max-pages "$MAX_PAGES" --quota-reserve "$QUOTA_RESERVE" --internal-test
+          python scripts/collect_gear_recommendations.py --specs "$SPECS" --mode "$MODE" --target "$TARGET" --max-tasks 6 --max-seconds 780 --max-pages "$MAX_PAGES" --max-pages-raid "${MAX_PAGES_RAID:-$MAX_PAGES}" --max-pages-mythic-plus "${MAX_PAGES_MYTHIC_PLUS:-6}" --max-cast-pages "${MAX_CAST_PAGES:-2}" --quota-reserve "$QUOTA_RESERVE" --internal-test
           echo "result=$?" >> "$GITHUB_OUTPUT"
           exit 0
       - name: Generate clearly labeled synthetic fixtures
