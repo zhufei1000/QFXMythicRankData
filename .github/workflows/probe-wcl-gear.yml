@@ -45,7 +45,7 @@ jobs:
           set +e
           python scripts/probe_wcl_gear_v1.py \
             --mode both --target 100 \
-            --max-pages 5 --max-encounters 3 --max-zones 3 \
+            --max-pages 5 --max-encounters 3 --max-zones 3 --report-backfills 3 \
             --output artifacts/wcl_gear_probe.json
           code=$?
           echo "exit_code=${code}" >> "${GITHUB_OUTPUT}"
