@@ -43,6 +43,7 @@ def load_metadata(root,season_id):
             encounter=next((e for e in instance.get("encounters",[]) if e["id"]==raw.get("encounterId")),None)
             if not encounter: continue
             typ=instance.get("type")
+            if isinstance(typ,str) and typ.startswith("profession"):typ="crafted"
             if typ not in {"dungeon","raid","crafted","catalyst","great_vault","vendor"}: typ="other"
             # Negative source IDs are catalogue classifications, never guessed NPC/boss IDs.
             entries.append({"itemID":item["id"],"sourceType":typ,"instanceID":instance["id"],"encounterID":encounter["id"],

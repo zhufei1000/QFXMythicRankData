@@ -43,6 +43,17 @@ def iso(ms):
     return datetime.fromtimestamp(ms/1000,timezone.utc).isoformat()
 
 
+def authorization_record(path,now):
+    if not path or not path.exists() or not path.stat().st_size:raise ValueError("authorization_required")
+    try:record=json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError,UnicodeError):raise ValueError("authorization_record_invalid") from None
+    if not record.get("permissionReference") or not all(record.get(k) is True for k in ("collection","cache","aggregation")):
+        raise ValueError("authorization_scope_incomplete")
+    if datetime.fromisoformat(record.get("validUntil","2000-01-01T00:00:00+00:00"))<=now or record.get("maxCacheSeconds",0)<=0:
+        raise ValueError("authorization_expired")
+    return record
+
+
 def canonical_id(client,row,region):
     # Character names locate a current canonical ID; names are never the dedup key.
     char=row.get("character") or {}
@@ -55,12 +66,27 @@ def canonical_id(client,row,region):
     if isinstance(reg,dict): reg=reg.get("slug")
     if not reg and isinstance(server,dict): reg=server.get("regionSlug")
     if not reg and region!="world": reg=region
+    # Rankings expose server ID/name/region but do not promise a realm slug.
+    # Resolve that slug through official metadata, never transliterate/guess it.
+    if not slug and isinstance(server,dict) and isinstance(server.get("id"),int):
+        cache=getattr(client,"server_cache",{})
+        if server["id"] not in cache:
+            query="query($id:Int!) { worldData { server(id:$id) { slug region { slug } } } "+RATE+" }"
+            value=client.query(query,{"id":server["id"]},kind="server_metadata").get("worldData",{}).get("server") or {}
+            cache[server["id"]]=(value.get("slug"),(value.get("region") or {}).get("slug"))
+            client.server_cache=cache
+        slug,reg=cache[server["id"]]
     if not name or not slug or not reg: raise ValueError("missing_canonical_lookup_context")
+    cache=getattr(client,"canonical_cache",{})
+    cache_key=(name,slug,str(reg).lower())
+    if cache_key in cache:return cache[cache_key]
     query="query($name:String!,$server:String!,$region:String!) { characterData { character(name:$name,serverSlug:$server,serverRegion:$region) { canonicalID } } "+RATE+" }"
     data=client.query(query,{"name":name,"server":slug,"region":str(reg).lower()},kind="canonical_id")
     char=(data.get("characterData") or {}).get("character") or {}
     cid=char.get("canonicalID")
     if not isinstance(cid,int) or cid<=0: raise ValueError("canonical_id_unavailable")
+    cache[cache_key]=str(cid)
+    client.canonical_cache=cache
     return str(cid)
 
 
@@ -161,13 +187,23 @@ def run(opt):
             all_item_ids.update(x["itemID"] for r in state["samples"].values() for x in r["gear"])
         data["itemSources"]={k:sources[k] for k in all_item_ids if k in sources}
         diag["errors"]=dict(failures)
-        diag["coverage"]=[{"specID":s["id"],"class":s["className"],"spec":s["specName"],"mode":m,"sampleCount":len(checkpoint["tasks"].get(f'{s["id"]}:{m}',{}).get("samples",{})),"target":opt.target} for s in specs for m in ("mythic_plus","raid")]
-        diag["totalValidSamples"]=sum(x["sampleCount"] for x in diag["coverage"])
+        diag["coverage"]=[]
+        for s in specs:
+            for m in ("mythic_plus","raid"):
+                state=checkpoint["tasks"].get(f'{s["id"]}:{m}')
+                count=len(state["samples"]) if state is not None else None
+                diag["coverage"].append({"specID":s["id"],"class":s["className"],"spec":s["specName"],"mode":m,"sampleCount":count,"target":opt.target,
+                                         "status":"not_collected" if count is None else "ready" if count>=50 else "insufficient"})
+        diag["totalValidSamples"]=sum(x["sampleCount"] or 0 for x in diag["coverage"])
         if client: diag.update(client.metrics())
         else: diag.update(apiRequests=0,elapsedSeconds=round(time.monotonic()-started,2),pointsConsumedEstimate=None)
         save(opt.checkpoint,checkpoint);save(opt.output,data);save(opt.diagnostics,diag)
     flush()
     try:
+        authorization=authorization_record(opt.authorization,now)
+        scope["expiresAt"]=min(checkpoint["expiresAt"],int(min(now+timedelta(seconds=min(259200,authorization["maxCacheSeconds"])),datetime.fromisoformat(authorization["validUntil"])).timestamp()))
+        checkpoint["expiresAt"]=scope["expiresAt"]
+        data["authorizationReference"]=authorization["permissionReference"]
         client=WCLClient(max_seconds=opt.max_seconds)
         meta=client.query(META,kind="metadata")
         zones=meta.get("worldData",{}).get("zones",[])
@@ -218,7 +254,7 @@ def run(opt):
                                 f=next((f for f in report.get("fights",[]) if f["id"]==fight),None)
                                 if not f:raise ValueError("fight_unavailable")
                                 if mode=="raid" and (not f.get("kill") or f.get("difficulty")!=diff["id"] or f.get("encounterID")!=eid):raise ValueError("not_mythic_kill")
-                                if mode=="mythic_plus" and (not f.get("keystoneLevel") or not f.get("keystoneTime")):raise ValueError("not_completed_keystone")
+                                if mode=="mythic_plus" and (not f.get("kill") or not f.get("keystoneLevel") or not f.get("keystoneTime") or f.get("encounterID")!=eid):raise ValueError("not_completed_keystone")
                                 absolute=report.get("startTime",0)+f["startTime"]
                                 date=iso(absolute)
                                 if not window_start<=datetime.fromisoformat(date)<=now:raise ValueError("outside_season_window")
@@ -257,7 +293,7 @@ def run(opt):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--specs",default="71")
+    p.add_argument("--specs",help="Comma-separated SpecIDs; defaults to Arms, or the selected class")
     p.add_argument("--class-name")
     p.add_argument("--mode",choices=("both","raid","mythic_plus"),default="both")
     p.add_argument("--target",type=int,default=50)
@@ -265,11 +301,12 @@ def main():
     p.add_argument("--max-pages",type=int,default=3)
     p.add_argument("--max-cast-pages",type=int,default=6)
     p.add_argument("--max-seconds",type=int,default=300)
+    p.add_argument("--authorization",type=Path,help="RPGLogs approval record covering collection, caching and aggregation")
     p.add_argument("--checkpoint",type=Path,default=ROOT/"artifacts/gear/checkpoint.json")
     p.add_argument("--output",type=Path,default=ROOT/"artifacts/gear/recommendations.json")
     p.add_argument("--diagnostics",type=Path,default=ROOT/"artifacts/gear/diagnostics.json")
     o=p.parse_args()
-    o.specs=[int(x) for x in o.specs.split(",") if x.strip()]
+    o.specs=[int(x) for x in o.specs.split(",") if x.strip()] if o.specs is not None else ([] if o.class_name else [71])
     if not 1<=o.target<=50 or not 1<=o.max_tasks<=12 or not 1<=o.max_seconds<=900:p.error("target 1..50, max-tasks 1..12, max-seconds 1..900")
     raise SystemExit(run(o))
 

@@ -9,7 +9,7 @@ import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
 MODES={"mythic_plus":"MythicPlus","raid":"Raid"}
-API='''local API = {schemaVersion=1, manifest=MANIFEST, data={}, itemSources=SOURCES}
+API='''local API = {schemaVersion=1, manifest=MANIFEST, data={}, itemSources=SOURCES, failedLoads={}}
 _G.API_NAME = API
 function API:Register(specID, mode, data)
     if type(data) ~= "table" or data.schemaVersion ~= 1 or data.seasonID ~= self.manifest.seasonID then return end
@@ -22,7 +22,10 @@ function API:GetRecommendation(specID, mode, load)
     if not addon then return nil, "missing" end
     if not (self.data[specID] and self.data[specID][mode]) and load then
         if InCombatLockdown() then return nil, "combat" end
-        if C_AddOns and C_AddOns.LoadAddOn then C_AddOns.LoadAddOn(addon) end
+        if not self.failedLoads[addon] and C_AddOns and C_AddOns.LoadAddOn then
+            local loaded = C_AddOns.LoadAddOn(addon)
+            if not loaded then self.failedLoads[addon]=true end
+        end
     end
     return self.data[specID] and self.data[specID][mode]
 end
@@ -80,6 +83,7 @@ def validate(data):
 
 
 def build(data,output,internal=True):
+    if not internal:raise ValueError("public_distribution_disabled_pending_RPGLogs_authorization")
     validate(data)
     modules={"QFXGearData":{},"QFXConsumableData":{}}
     for base in modules:
@@ -90,20 +94,27 @@ def build(data,output,internal=True):
             modules[base][key]=addon
             common={k:record[k] for k in ("specID","mode","seasonID","sampleCount","version","updatedAt","expiresAt","status","confidence","patch","region","windowStart","windowEnd")}
             common["schemaVersion"]=1
+            common["testData"]=bool(data.get("testData"))
             if base=="QFXGearData":
                 common.update({k:record[k] for k in ("gearSlots","statRanges","combinations","loadouts","tierCombinations","bonusTracks")})
             else:common.update(consumables=record["consumables"],mappingCoverage=record["mappingCoverage"])
-            write(output/addon/(addon+".toc"),f"## Interface: 120100\n## Title: {addon}\n## Version: 1.0.0\n## Dependencies: {base}\n## LoadOnDemand: 1\nData.lua\n")
+            label=" (SYNTHETIC TEST DATA)" if data.get("testData") else " (internal test)"
+            write(output/addon/(addon+".toc"),f"## Interface: 120100\n## Title: {addon}{label}\n## Version: {common['version']}\n## Dependencies: {base}\n## LoadOnDemand: 1\nData.lua\n")
             write(output/addon/"Data.lua",f"if _G.{base} then _G.{base}:Register({spec},{lua(mode)},{lua(common)}) end\n")
         manifest={**data["scope"],"schemaVersion":1,"modules":modules[base],"internalTest":internal}
         source=data.get("itemSources",{}) if base=="QFXGearData" else {}
         code=API.replace("MANIFEST",lua(manifest)).replace("SOURCES",lua(source)).replace("API_NAME",base)
         write(output/base/"Core.lua",code)
-        write(output/base/(base+".toc"),f"## Interface: 120100\n## Title: {base}"+(" (internal test)" if internal else "")+"\n## Version: 1.0.0\n## Notes: Observed usage; no network access.\nCore.lua\n")
+        label=" (SYNTHETIC TEST DATA)" if data.get("testData") else " (internal test)"
+        write(output/base/(base+".toc"),f"## Interface: 120100\n## Title: {base}{label}\n## Version: {data['scope']['version']}\n## Notes: Local data; no network access.\nCore.lua\n")
     path=output.parent/"QFXRecommendationData-internal.zip"
     with zipfile.ZipFile(path,"w",zipfile.ZIP_DEFLATED) as z:
-        for file in sorted(output.rglob("*")):
-            if file.is_file() and file.suffix in {".lua",".toc"}:z.write(file,file.relative_to(output))
+        # Package only the current manifest, excluding stale modules from older runs.
+        for base,entries in modules.items():
+            for addon in [base]+sorted(entries.values()):
+                for filename in (addon+".toc","Core.lua" if addon==base else "Data.lua"):
+                    file=output/addon/filename
+                    z.write(file,file.relative_to(output))
     return path
 
 

@@ -73,9 +73,25 @@ def normalize_gear(raw, items, bonuses, spec_id):
         else:
             if fixed>=8 and len({r[0] for r in rows})==len(rows): candidates.append((scheme,rows))
     if not candidates:
-        # Standalone armor can be resolved by type, but incomplete/ambiguous snapshots
-        # do not count toward the target of valid complete loadouts.
-        raise ValueError("unverified_slot_schema")
+        # WCL may omit empty shirt/tabard/off-hand entries. Align the entire ordered
+        # snapshot against inventory-type constraints, accepting only a unique match.
+        # Paired slots are thereby located by a validated schema, not filtered indices.
+        solutions=[]
+        sequence=(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,19)
+        optional={4,17,19}
+        def align(index,position,rows):
+            if len(solutions)>1:return
+            if position==len(sequence):
+                if index==len(equipped):solutions.append(rows)
+                return
+            slot=sequence[position]
+            if slot in optional:align(index,position+1,rows)
+            if index<len(equipped):
+                _,entry,meta=equipped[index]
+                if meta.get("inventoryType") in ALLOWED[slot]:align(index+1,position+1,rows+[(slot,entry,meta)])
+        align(0,0,[])
+        if len(solutions)!=1:raise ValueError("unverified_slot_schema")
+        candidates=[("metadata_aligned_sequence",solutions[0])]
     distinct={tuple((r[0],r[1].get("id",r[1].get("itemID"))) for r in rows) for _,rows in candidates}
     if len(distinct)>1:
         raise ValueError("ambiguous_slot_schema")
@@ -105,7 +121,7 @@ def normalize_gear(raw, items, bonuses, spec_id):
             "track":track,"setID":meta.get("itemSetId"),"unique":meta.get("uniqueEquipped",False),"itemLimit":meta.get("itemLimit"),
             "crafted":bool(meta.get("profession")),"craftedStats":crafted_stats,"effects":effects,"veryRare":any(s.get("veryRare") for s in meta.get("sources",[]))})
     by_slot={r["slot"]:r for r in result}
-    mandatory=set(SLOTS)-{17}
+    mandatory=set(SLOTS) if spec_id==72 else set(SLOTS)-{17}
     if not mandatory <= by_slot.keys():
         raise ValueError("incomplete_loadout")
     main_meta=items[by_slot[16]["itemID"]]
@@ -173,7 +189,20 @@ def summarize(samples, scope, sources, mappings):
     # A whole observed loadout, rather than independently combining per-slot winners.
     # This preserves observed weapon, unique-item, crafted and tier combinations.
     profiles=Counter(json.dumps({x["slot"]:x["itemID"] for x in r["gear"]},sort_keys=True) for r in rows)
-    full=[{"slots":json.loads(k),"count":v,"usage":v/n} for k,v in profiles.most_common(3)] if n else []
+    full=[]
+    for signature,count in profiles.most_common(3):
+        matching=[r for r in rows if json.dumps({x["slot"]:x["itemID"] for x in r["gear"]},sort_keys=True)==signature]
+        kit={}
+        for observed in matching[0]["gear"]:
+            slot=observed["slot"]
+            observations=[x for r in matching for x in r["gear"] if x["slot"]==slot]
+            levels=distribution([x["itemLevel"] for x in observations])
+            track=observed["track"]
+            kit[slot]={"itemID":observed["itemID"],"count":count,"sampleCount":n,"usage":count/n,"setID":observed["setID"],
+                       "itemLevels":levels,"tracks":[track] if track else [],
+                       "target":{"trackID":track["id"],"trackRank":track["rank"],"itemLevel":observed["itemLevel"]} if track else None}
+        full.append({"slots":json.loads(signature),"count":count,"usage":count/n,"gear":kit,
+                     "sets":dict(Counter(x["setID"] for x in matching[0]["gear"] if x["setID"]))})
     tier=Counter()
     for r in rows:
         sets=Counter(x["setID"] for x in r["gear"] if x["setID"])
@@ -194,6 +223,8 @@ def summarize(samples, scope, sources, mappings):
             choices.append({"spellID":sid,"count":count,"sampleCount":len(eligible),"usage":count/len(eligible),
                             "itemID":selected.get("itemID") if selected else None,"quality":selected.get("quality") if selected else None,
                             "itemIDs":item_rows,"effect":mapping.get("effect") if valid else None})
+            if category=="combatPotion":
+                choices[-1]["completedCastCount"]=sum(r["consumables"].get("combatPotionCasts",{}).get(sid,r["consumables"].get("combatPotionCasts",{}).get(str(sid),0)) for r in eligible)
         total=sum(counts.values())
         coverage[category]={"eligiblePlayers":len(eligible),"observedPlayerSpellPairs":total,"mappedPlayerSpellPairs":mapped,"mappingCompleteRate":mapped/total if total else None}
         consumables[category]=choices

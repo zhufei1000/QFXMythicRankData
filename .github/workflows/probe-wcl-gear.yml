@@ -2,6 +2,10 @@ name: Collect gear recommendations (manual internal validation)
 on:
   workflow_dispatch:
     inputs:
+      test_data:
+        description: Generate 40-spec synthetic fixtures without WCL requests
+        type: boolean
+        default: true
       specs:
         description: Comma-separated SpecIDs; validate Arms first, keep batches small
         default: '71'
@@ -37,7 +41,7 @@ jobs:
       - name: Verify collector and statistics
         run: python -m pytest -q tests/test_gear_recommendations.py
       - name: Resume private checkpoint
-        if: inputs.checkpoint_run != ''
+        if: inputs.test_data == false && github.event.repository.private && inputs.checkpoint_run != ''
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ inputs.checkpoint_run }}
@@ -46,17 +50,27 @@ jobs:
           gh run download "$RUN_ID" --name qfx-gear-checkpoint --dir artifacts/gear
       - name: Collect bounded batch using existing WCL secrets
         id: collect
+        if: inputs.test_data == false
         env:
           WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
           WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
           SPECS: ${{ inputs.specs }}
           MODE: ${{ inputs.mode }}
           TARGET: ${{ inputs.target }}
+          GEAR_AUTHORIZATION: ${{ vars.QFX_GEAR_AUTHORIZATION_JSON }}
         run: |
+          mkdir -p artifacts/gear
+          printf '%s' "$GEAR_AUTHORIZATION" > artifacts/gear/authorization.json
           set +e
-          python scripts/collect_gear_recommendations.py --specs "$SPECS" --mode "$MODE" --target "$TARGET" --max-tasks 6 --max-seconds 780
+          python scripts/collect_gear_recommendations.py --specs "$SPECS" --mode "$MODE" --target "$TARGET" --max-tasks 6 --max-seconds 780 --authorization artifacts/gear/authorization.json
           echo "result=$?" >> "$GITHUB_OUTPUT"
           exit 0
+      - name: Generate clearly labeled synthetic fixtures
+        if: inputs.test_data
+        run: |
+          python scripts/generate_gear_mock_data.py --output-dir artifacts/gear
+          mv artifacts/gear/mock-recommendations.json artifacts/gear/recommendations.json
+          python -c 'import json,pathlib; p=pathlib.Path("artifacts/gear"); d=json.loads((p/"recommendations.json").read_text()); (p/"diagnostics.json").write_text(json.dumps(d["mockDiagnostics"]))'
       - name: Build internal test addons
         if: always()
         run: |
@@ -64,24 +78,31 @@ jobs:
             python scripts/build_gear_databases.py --input artifacts/gear/recommendations.json --internal-test
           fi
       - name: Upload resumable short-lived checkpoint
-        if: always()
+        if: always() && github.event.repository.private && inputs.test_data == false
         uses: actions/upload-artifact@v4
         with:
           name: qfx-gear-checkpoint
           path: artifacts/gear/checkpoint.json
           retention-days: 3
           if-no-files-found: warn
-      - name: Upload anonymous diagnostics and private-test data
+      - name: Upload anonymous diagnostics
         if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qfx-gear-diagnostics
+          path: artifacts/gear/diagnostics.json
+          retention-days: 3
+          if-no-files-found: warn
+      - name: Upload synthetic or private-repository test data
+        if: always() && (inputs.test_data || github.event.repository.private)
         uses: actions/upload-artifact@v4
         with:
           name: qfx-gear-validation
           path: |
-            artifacts/gear/diagnostics.json
             artifacts/gear/recommendations.json
             artifacts/gear/QFXRecommendationData-internal.zip
           retention-days: 3
           if-no-files-found: warn
       - name: Mark incomplete collection honestly
-        if: steps.collect.outputs.result != '0'
+        if: inputs.test_data == false && steps.collect.outputs.result != '0'
         run: exit 1

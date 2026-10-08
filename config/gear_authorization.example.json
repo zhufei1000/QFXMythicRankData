@@ -1,0 +1,10 @@
+{
+  "permissionReference": "Replace with the RPGLogs permission reference covering the requested use",
+  "validUntil": "2000-01-01T00:00:00+00:00",
+  "collection": false,
+  "cache": false,
+  "aggregation": false,
+  "addonDistribution": false,
+  "maxCacheSeconds": 0,
+  "note": "This is a format example, not authorization. Keep the actual approval record outside source control."
+}
