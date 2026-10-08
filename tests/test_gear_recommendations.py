@@ -252,6 +252,13 @@ def test_checkpoint_resume_after_quota_pause_preserves_page_and_deduplicates(tmp
     query_calls.clear()
     assert collector.run(opt)==0
     assert len([x for x in query_calls if x[0]=="combatants"])==1
+    coverage_checkpoint=json.loads(opt.checkpoint.read_text())
+    coverage_checkpoint["tasks"]["71:raid"]["page"]=9
+    opt.checkpoint.write_text(json.dumps(coverage_checkpoint))
+    opt.target=2
+    query_calls.clear()
+    assert collector.run(opt)==0
+    assert next(x[1]["page"] for x in query_calls if x[0]=="rankings")==1
 
 
 def test_internal_transfer_encryption_authentication_and_roundtrip(tmp_path):
