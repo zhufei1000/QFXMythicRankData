@@ -1,0 +1,94 @@
+name: Validate QFX unified consumables (experimental)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/probe-wcl-consumables-v3.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collect_and_package:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Unit tests for unified collector and Lua builder
+        run: |
+          python -m pytest -q tests/test_collect_wcl_consumables_v3.py tests/test_build_wcl_consumables_lua.py tests/test_probe_wcl_consumables_v2.py tests/test_probe_wcl_consumables_v1.py
+      - name: Validate WCL 5 raid + 5 Mythic+ Arms Warriors
+        id: sample
+        shell: bash
+        env:
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
+          WCL_REQUEST_DELAY: "0.15"
+        run: |
+          set +e
+          python scripts/collect_wcl_consumables_v3.py \
+            --target 5 --mode both --max-pages 2 --max-cast-pages 4 \
+            --max-seconds 150 --output artifacts/qfx_consumables_sample_v3.json
+          code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Build isolated test Lua addon
+        if: always()
+        shell: bash
+        run: |
+          if test -f artifacts/qfx_consumables_sample_v3.json; then
+            python scripts/build_wcl_consumables_lua.py \
+              --input artifacts/qfx_consumables_sample_v3.json \
+              --output-dir artifacts/QFXConsumableData \
+              --min-samples 30
+          fi
+      - name: Print anonymous run summary
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import os, json
+          p=Path('artifacts/qfx_consumables_sample_v3.json')
+          lines=['## QFX Unified Consumables / WCL Live Test','','**INTERNAL TEST ONLY. NOT PUBLISHED.**','']
+          if p.exists():
+              d=json.loads(p.read_text(encoding='utf-8'))
+              lines += ['Status: '+d['status'],'WCL API requests: '+str(d['api_requests']),
+                        'Elapsed seconds: '+str(d['elapsed_seconds']),
+                        '| Mode | Players | Flask | Food Buff | Combat Potion Cast | Potion event denominator |',
+                        '|---|---:|---:|---:|---:|---:|']
+              for name,scene in d['scenes'].items():
+                  ct=scene['counts']; rec=scene['recommendations']
+                  lines.append('| {} | {} | {} | {} | {} | {} |'.format(
+                     name,ct.get('actors_matched',0),
+                     ct.get('flask_players_detected',0),
+                     ct.get('food_players_detected',0),
+                     sum(x['players'] for x in rec['combat_potion']),
+                     ct.get('potion_eligible',0)))
+              lines += ['','Generated Lua is gated as experimental (no standard recommendations for under-30 samples).',
+                        'Food Buff ID does not identify exact food ItemID.']
+          else:
+              lines.append('No sample JSON created; inspect logs')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
+              f.write('\n'.join(lines)+'\n')
+          PY
+      - name: Upload short-lived aggregate and experimental addon
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qfx-consumables-unified-v3-${{ github.run_id }}
+          path: |
+            artifacts/qfx_consumables_sample_v3.json
+            artifacts/QFXConsumableData-experimental.zip
+          if-no-files-found: warn
+          retention-days: 3
+      - name: Reject incomplete validation
+        if: steps.sample.outputs.code != '0'
+        run: exit 1
