@@ -1,5 +1,223 @@
 {
   "schemaVersion": 1,
-  "mappings": {},
-  "note": "Intentionally empty until exact SpellID to ItemID and quality mappings have verifiable source evidence. Generic food buffs must not identify a specific dish."
+  "seasonID": 18,
+  "sourceBuild": "12.1.0.69933",
+  "mappings": {
+    "1236994": {
+      "verified": true,
+      "seasonID": 18,
+      "category": "combatPotion",
+      "evidence": {
+        "relation": "https://raw.githubusercontent.com/simulationcraft/simc/midnight/engine/dbc/generated/item_effect.inc",
+        "relationSHA256": "4f749b8fa6c353449cfb467f17e50b73bcb196b4b9e6e5aa5cb58c5704130a7b",
+        "quality": "https://raw.githubusercontent.com/simulationcraft/simc/midnight/engine/dbc/generated/item_data.inc",
+        "qualitySHA256": "24a4b8e5ffd55aa6e8700d2fb60efac9a071530fe3982008a021ff0e14f38584",
+        "qualitySchema": "https://github.com/simulationcraft/simc/blob/midnight/engine/dbc/item_data.hpp",
+        "build": "12.1.0.69933"
+      },
+      "items": [
+        {
+          "itemID": 241288,
+          "quality": 2,
+          "recommended": true
+        },
+        {
+          "itemID": 241289,
+          "quality": 1
+        },
+        {
+          "itemID": 245902,
+          "quality": 2
+        },
+        {
+          "itemID": 245903,
+          "quality": 1
+        }
+      ]
+    },
+    "1236616": {
+      "verified": true,
+      "seasonID": 18,
+      "category": "combatPotion",
+      "evidence": {
+        "relation": "https://raw.githubusercontent.com/simulationcraft/simc/midnight/engine/dbc/generated/item_effect.inc",
+        "relationSHA256": "4f749b8fa6c353449cfb467f17e50b73bcb196b4b9e6e5aa5cb58c5704130a7b",
+        "quality": "https://raw.githubusercontent.com/simulationcraft/simc/midnight/engine/dbc/generated/item_data.inc",
+        "qualitySHA256": "24a4b8e5ffd55aa6e8700d2fb60efac9a071530fe3982008a021ff0e14f38584",
+        "qualitySchema": "https://github.com/simulationcraft/simc/blob/midnight/engine/dbc/item_data.hpp",
+        "build": "12.1.0.69933"
+      },
+      "items": [
+        {
+          "itemID": 241308,
+          "quality": 2,
+          "recommended": true
+        },
+        {
+          "itemID": 241309,
+          "quality": 1
+        },
+        {
+          "itemID": 245897,
+          "quality": 1
+        },
+        {
+          "itemID": 245898,
+          "quality": 2
+        }
+      ]
+    },
+    "1235057": {
+      "verified": true,
+      "seasonID": 18,
+      "category": "flask",
+      "evidence": {
+        "relation": "https://raw.githubusercontent.com/simulationcraft/simc/midnight/engine/dbc/generated/item_effect.inc",
+        "relationSHA256": "4f749b8fa6c353449cfb467f17e50b73bcb196b4b9e6e5aa5cb58c5704130a7b",
+        "quality": "https://raw.githubusercontent.com/simulationcraft/simc/midnight/engine/dbc/generated/item_data.inc",
+        "qualitySHA256": "24a4b8e5ffd55aa6e8700d2fb60efac9a071530fe3982008a021ff0e14f38584",
+        "qualitySchema": "https://github.com/simulationcraft/simc/blob/midnight/engine/dbc/item_data.hpp",
+        "build": "12.1.0.69933"
+      },
+      "items": [
+        {
+          "itemID": 241320,
+          "quality": 2,
+          "recommended": true
+        },
+        {
+          "itemID": 241321,
+          "quality": 1
+        },
+        {
+          "itemID": 245926,
+          "quality": 2
+        },
+        {
+          "itemID": 245927,
+          "quality": 1
+        }
+      ]
+    },
+    "1235108": {
+      "verified": true,
+      "seasonID": 18,
+      "category": "flask",
+      "evidence": {
+        "relation": "https://raw.githubusercontent.com/simulationcraft/simc/midnight/engine/dbc/generated/item_effect.inc",
+        "relationSHA256": "4f749b8fa6c353449cfb467f17e50b73bcb196b4b9e6e5aa5cb58c5704130a7b",
+        "quality": "https://raw.githubusercontent.com/simulationcraft/simc/midnight/engine/dbc/generated/item_data.inc",
+        "qualitySHA256": "24a4b8e5ffd55aa6e8700d2fb60efac9a071530fe3982008a021ff0e14f38584",
+        "qualitySchema": "https://github.com/simulationcraft/simc/blob/midnight/engine/dbc/item_data.hpp",
+        "build": "12.1.0.69933"
+      },
+      "items": [
+        {
+          "itemID": 241322,
+          "quality": 2,
+          "recommended": true
+        },
+        {
+          "itemID": 241323,
+          "quality": 1
+        },
+        {
+          "itemID": 245932,
+          "quality": 1
+        },
+        {
+          "itemID": 245933,
+          "quality": 2
+        }
+      ]
+    },
+    "1235110": {
+      "verified": true,
+      "seasonID": 18,
+      "category": "flask",
+      "evidence": {
+        "relation": "https://raw.githubusercontent.com/simulationcraft/simc/midnight/engine/dbc/generated/item_effect.inc",
+        "relationSHA256": "4f749b8fa6c353449cfb467f17e50b73bcb196b4b9e6e5aa5cb58c5704130a7b",
+        "quality": "https://raw.githubusercontent.com/simulationcraft/simc/midnight/engine/dbc/generated/item_data.inc",
+        "qualitySHA256": "24a4b8e5ffd55aa6e8700d2fb60efac9a071530fe3982008a021ff0e14f38584",
+        "qualitySchema": "https://github.com/simulationcraft/simc/blob/midnight/engine/dbc/item_data.hpp",
+        "build": "12.1.0.69933"
+      },
+      "items": [
+        {
+          "itemID": 241324,
+          "quality": 2,
+          "recommended": true
+        },
+        {
+          "itemID": 241325,
+          "quality": 1
+        },
+        {
+          "itemID": 245930,
+          "quality": 1
+        },
+        {
+          "itemID": 245931,
+          "quality": 2
+        }
+      ]
+    },
+    "1235111": {
+      "verified": true,
+      "seasonID": 18,
+      "category": "flask",
+      "evidence": {
+        "relation": "https://raw.githubusercontent.com/simulationcraft/simc/midnight/engine/dbc/generated/item_effect.inc",
+        "relationSHA256": "4f749b8fa6c353449cfb467f17e50b73bcb196b4b9e6e5aa5cb58c5704130a7b",
+        "quality": "https://raw.githubusercontent.com/simulationcraft/simc/midnight/engine/dbc/generated/item_data.inc",
+        "qualitySHA256": "24a4b8e5ffd55aa6e8700d2fb60efac9a071530fe3982008a021ff0e14f38584",
+        "qualitySchema": "https://github.com/simulationcraft/simc/blob/midnight/engine/dbc/item_data.hpp",
+        "build": "12.1.0.69933"
+      },
+      "items": [
+        {
+          "itemID": 241326,
+          "quality": 2,
+          "recommended": true
+        },
+        {
+          "itemID": 241327,
+          "quality": 1
+        },
+        {
+          "itemID": 245928,
+          "quality": 1
+        },
+        {
+          "itemID": 245929,
+          "quality": 2
+        }
+      ]
+    },
+    "1295132": {
+      "verified": true,
+      "seasonID": 18,
+      "category": "combatPotion",
+      "evidence": {
+        "relation": "https://raw.githubusercontent.com/simulationcraft/simc/midnight/engine/dbc/generated/item_effect.inc",
+        "relationSHA256": "4f749b8fa6c353449cfb467f17e50b73bcb196b4b9e6e5aa5cb58c5704130a7b",
+        "quality": "https://raw.githubusercontent.com/simulationcraft/simc/midnight/engine/dbc/generated/item_data.inc",
+        "qualitySHA256": "24a4b8e5ffd55aa6e8700d2fb60efac9a071530fe3982008a021ff0e14f38584",
+        "qualitySchema": "https://github.com/simulationcraft/simc/blob/midnight/engine/dbc/item_data.hpp",
+        "build": "12.1.0.69933"
+      },
+      "items": [
+        {
+          "itemID": 271886,
+          "quality": 1
+        },
+        {
+          "itemID": 271887,
+          "quality": 2,
+          "recommended": true
+        }
+      ]
+    }
+  }
 }

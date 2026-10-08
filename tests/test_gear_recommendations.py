@@ -263,3 +263,16 @@ def test_internal_transfer_encryption_authentication_and_roundtrip(tmp_path):
     data["nonce"]="AAAAAAAAAAAAAAAA"
     envelope.write_text(json.dumps(data))
     with pytest.raises(InvalidTag):decrypt(envelope,tmp_path/"keys/recipient-private.pem",tmp_path/"tampered")
+
+
+def test_production_consumable_mappings_include_DBC_evidence_and_quality():
+    data=json.loads((ROOT/"config/gear_consumable_mappings.json").read_text(encoding="utf-8"))
+    mappings=data["mappings"]
+    assert data["sourceBuild"].startswith("12.1.")
+    for spell,expected in (("1235110",241324),("1236994",241288)):
+        row=mappings[spell]
+        assert row["verified"] and row["seasonID"]==18
+        assert row["evidence"]["relation"].endswith("item_effect.inc")
+        assert len(row["evidence"]["relationSHA256"])==64
+        selected=next(x for x in row["items"] if x.get("recommended"))
+        assert selected["itemID"]==expected and selected["quality"]==2
