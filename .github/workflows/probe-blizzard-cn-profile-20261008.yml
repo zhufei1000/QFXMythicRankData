@@ -1,0 +1,74 @@
+name: Probe Blizzard CN profile endpoints (isolated no-public-data)
+
+on:
+  push:
+    branches:
+      - probe/raiderio-cn-gear-20261008
+    paths:
+      - .github/workflows/probe-blizzard-cn-profile-20261008.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      BLIZZARD_CLIENT_ID: ${{ secrets.BLIZZARD_CLIENT_ID }}
+      BLIZZARD_CLIENT_SECRET: ${{ secrets.BLIZZARD_CLIENT_SECRET }}
+    steps:
+      - name: Check CN API reachability and authenticated response when credentials exist
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          def fetch(label, url, token=None):
+              headers={"User-Agent":"GearInspect-Blizzard-CN-Profile-Probe/1.0","Accept":"application/json"}
+              if token: headers["Authorization"]="Bearer " + token
+              req=urllib.request.Request(url,headers=headers)
+              try:
+                  with urllib.request.urlopen(req,timeout=14) as response:
+                      payload=response.read(300000)
+                      status=response.status
+                  data=json.loads(payload)
+                  print("RESULT",label,"HTTP",status,"keys",list(data.keys())[:14],flush=True)
+                  for key in ("melee_crit","spell_crit","ranged_crit","melee_haste","spell_haste","mastery","versatility"):
+                      if key in data: print("STAT_KEY",key,"exists",flush=True)
+                  return True
+              except urllib.error.HTTPError as exc:
+                  content=exc.read(180).decode("utf-8",errors="replace")
+                  print("RESULT",label,"HTTP",exc.code,"BODY",content,flush=True)
+              except Exception as exc:
+                  print("RESULT",label,"ERROR",type(exc).__name__,str(exc)[:130],flush=True)
+              return False
+
+          id=os.environ.get("BLIZZARD_CLIENT_ID","")
+          sec=os.environ.get("BLIZZARD_CLIENT_SECRET","")
+          print("BLIZZARD_CREDENTIALS_CONFIGURED",bool(id and sec),flush=True)
+          token=None
+          if id and sec:
+              form=urllib.parse.urlencode({"grant_type":"client_credentials"}).encode()
+              creds=base64.b64encode((id+":"+sec).encode()).decode()
+              req=urllib.request.Request("https://oauth.battle.net.cn/token",data=form,headers={"Authorization":"Basic "+creds,"Content-Type":"application/x-www-form-urlencoded"})
+              try:
+                  with urllib.request.urlopen(req,timeout=15) as response:
+                      payload=json.load(response)
+                      token=payload.get("access_token")
+                  print("CHINA_OAUTH_SUCCESS",bool(token),flush=True)
+              except urllib.error.HTTPError as exc:
+                  print("CHINA_OAUTH_HTTP",exc.code,flush=True)
+              except Exception as exc:
+                  print("CHINA_OAUTH_ERROR",type(exc).__name__,str(exc)[:100],flush=True)
+          path="/profile/wow/character/shadowfang-keep/"+urllib.parse.quote("\u8d28\u91cf\u6709\u4fdd\u8bc1",safe="")
+          base="https://gateway.battlenet.com.cn"
+          for leaf in ("equipment","statistics"):
+              url=base+path+"/"+leaf+"?namespace=profile-cn&locale=zh_CN"
+              fetch("CN_"+leaf.upper(),url,token)
+          PY
