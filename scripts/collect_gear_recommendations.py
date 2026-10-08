@@ -43,13 +43,15 @@ def iso(ms):
     return datetime.fromtimestamp(ms/1000,timezone.utc).isoformat()
 
 
-def ranked_encounters(encounters,spec_id,target):
+def ranked_encounters(encounters,spec_id,target,page=1):
     if not encounters:return []
     offset=spec_id%len(encounters)
     ordered=encounters[offset:]+encounters[:offset]
     # A one-player coverage probe does not need every boss's ranking page up front.
     # The full 50-player collection retains all encounters for diversity.
-    return ordered[:max(1,target)] if target<4 else ordered
+    if target<4:
+        return [(ordered[(page-1)%len(ordered)],(page-1)//len(ordered)+1)]
+    return [(encounter,page) for encounter in ordered]
 
 
 def authorization_record(path,now):
@@ -224,6 +226,9 @@ def run(opt):
         for spec,mode in tasks:
             key=f'{spec["id"]}:{mode}'
             state=checkpoint["tasks"].setdefault(key,{"samples":{},"page":1})
+            if state.get("target")!=opt.target:
+                state["page"]=1
+                state["target"]=opt.target
             # Expire sample dates independently of the checkpoint lifetime.
             state["samples"]={k:r for k,r in state["samples"].items() if datetime.fromisoformat(r["date"])>=window_start}
             zone=next((z for z in zones if z["id"]==season[mode]["zoneID"] and z["name"]==season[mode]["zoneName"]),None)
@@ -234,13 +239,13 @@ def run(opt):
             partitions=[p for p in zone["partitions"] if p.get("default")]
             if len(partitions)!=1:raise ValueError("partition_ambiguous")
             partition=partitions[0]["id"]
-            encounters=ranked_encounters(zone["encounters"],spec["id"],opt.target)
+            encounters=zone["encounters"]
             for page in range(state.get("page",1),opt.max_pages+1):
                 if len(state["samples"])>=opt.target:break
                 candidates=[]
                 # Round-robin across encounters instead of exhausting the first boss.
-                for encounter in encounters:
-                    raw=client.query(RANKS,{"id":encounter["id"],"difficulty":diff["id"],"class":spec["className"],"spec":spec["specName"],"page":page,"partition":partition},kind="rankings").get("worldData",{}).get("encounter",{}).get("characterRankings") or {}
+                for encounter,ranking_page in ranked_encounters(encounters,spec["id"],opt.target,page):
+                    raw=client.query(RANKS,{"id":encounter["id"],"difficulty":diff["id"],"class":spec["className"],"spec":spec["specName"],"page":ranking_page,"partition":partition},kind="rankings").get("worldData",{}).get("encounter",{}).get("characterRankings") or {}
                     if isinstance(raw,str):raw=json.loads(raw)
                     rows=raw.get("rankings",[])
                     diag["schemaShapes"].setdefault("rankingKeys",sorted(rows[0]) if rows else [])
@@ -292,7 +297,7 @@ def run(opt):
                                 reason=str(e) if isinstance(e,ValueError) else type(e).__name__
                                 failures[reason]+=1
                             flush()
-                state["page"]=page+1
+                state["page"]=page if len(state["samples"])>=opt.target else page+1
                 flush()
         diag["status"]="complete" if all(len(checkpoint["tasks"].get(f'{s["id"]}:{m}',{}).get("samples",{}))>=opt.target for s,m in tasks) else "partial"
     except Pause as e:diag["status"]="paused_"+str(e)

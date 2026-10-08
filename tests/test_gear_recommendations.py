@@ -233,7 +233,7 @@ def test_checkpoint_resume_after_quota_pause_preserves_page_and_deduplicates(tmp
     assert len(state["samples"])==1 and state["page"]==1
     assert collector.run(opt)==0
     state=json.loads(opt.checkpoint.read_text())["tasks"]["71:raid"]
-    assert len(state["samples"])==2 and state["page"]==2
+    assert len(state["samples"])==2 and state["page"]==1
     diagnostic=json.loads(opt.diagnostics.read_text())
     assert diagnostic["errors"]["duplicate_canonical_id"]==1
     assert len(diagnostic["coverage"])==80
@@ -283,3 +283,5 @@ def test_single_player_probe_avoids_unneeded_ranking_queries():
     assert len(collector.ranked_encounters(encounters,71,1))==1
     assert len(collector.ranked_encounters(encounters,71,50))==8
     assert collector.ranked_encounters(encounters,71,1)!=collector.ranked_encounters(encounters,72,1)
+    assert collector.ranked_encounters(encounters,71,1,1)!=collector.ranked_encounters(encounters,71,1,2)
+    assert collector.ranked_encounters(encounters,71,1,9)[0][1]==2
