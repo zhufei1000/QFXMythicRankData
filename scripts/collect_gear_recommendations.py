@@ -18,7 +18,7 @@ from gear_consumable_parsers import snapshot_auras,table_auras,categorize,event_
 ROOT=Path(__file__).resolve().parents[1]
 META="query { worldData { zones { id name frozen difficulties { id name } partitions { id name default } encounters { id name journalID } } } "+RATE+" }"
 RANKS="""query($id:Int!,$difficulty:Int!,$class:String!,$spec:String!,$page:Int!,$partition:Int!) {
- worldData { encounter(id:$id) { characterRankings(difficulty:$difficulty,className:$class,specName:$spec,page:$page,partition:$partition,includeCombatantInfo:true) } }
+ worldData { encounter(id:$id) { characterRankings(difficulty:$difficulty,className:$class,specName:$spec,page:$page,partition:$partition,includeCombatantInfo:false) } }
  """+RATE+" }"
 REPORT="""query($code:String!,$fights:[Int]) { reportData { report(code:$code) {
  startTime zone { id } fights(fightIDs:$fights) { id encounterID difficulty kill startTime endTime keystoneLevel keystoneTime }
