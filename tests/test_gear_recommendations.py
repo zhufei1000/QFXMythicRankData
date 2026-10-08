@@ -236,3 +236,28 @@ def test_checkpoint_resume_after_quota_pause_preserves_page_and_deduplicates(tmp
     assert diagnostic["errors"]["duplicate_canonical_id"]==1
     assert len(diagnostic["coverage"])==80
     assert all(x["sampleCount"] is None for x in diagnostic["coverage"] if x["specID"]!=71)
+    # Internal real-data testing is independent of public redistribution approval.
+    opt.internal_test=True
+    monkeypatch.setattr(collector,"authorization_record",lambda *a:(_ for _ in ()).throw(AssertionError("internal test asked for public approval")))
+    assert collector.run(opt)==0
+    output=json.loads(opt.output.read_text())
+    assert output["purpose"]=="internal_real_data_test" and output["redistributionAuthorized"] is False
+
+
+def test_internal_transfer_encryption_authentication_and_roundtrip(tmp_path):
+    pytest.importorskip("cryptography")
+    from gear_private_transfer import keygen,encrypt,decrypt
+    from cryptography.exceptions import InvalidTag
+    keygen(tmp_path/"keys")
+    source=tmp_path/"source"
+    source.mkdir()
+    (source/"checkpoint.json").write_text('{"private":"synthetic-test"}')
+    envelope=tmp_path/"encrypted.json"
+    encrypt(source,tmp_path/"keys/recipient-public.pem",envelope)
+    assert "synthetic-test" not in envelope.read_text()
+    decrypt(envelope,tmp_path/"keys/recipient-private.pem",tmp_path/"result")
+    assert (tmp_path/"result/checkpoint.json").read_bytes()==(source/"checkpoint.json").read_bytes()
+    data=json.loads(envelope.read_text())
+    data["nonce"]="AAAAAAAAAAAAAAAA"
+    envelope.write_text(json.dumps(data))
+    with pytest.raises(InvalidTag):decrypt(envelope,tmp_path/"keys/recipient-private.pem",tmp_path/"tampered")

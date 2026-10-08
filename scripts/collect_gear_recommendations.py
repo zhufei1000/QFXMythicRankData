@@ -200,7 +200,11 @@ def run(opt):
         save(opt.checkpoint,checkpoint);save(opt.output,data);save(opt.diagnostics,diag)
     flush()
     try:
-        authorization=authorization_record(opt.authorization,now)
+        if getattr(opt,"internal_test",False):
+            authorization={"maxCacheSeconds":259200,"validUntil":(now+timedelta(days=3)).isoformat(),"permissionReference":"user-requested internal plugin test; public distribution disabled"}
+            data["purpose"]="internal_real_data_test"
+        else:
+            authorization=authorization_record(opt.authorization,now)
         scope["expiresAt"]=min(checkpoint["expiresAt"],int(min(now+timedelta(seconds=min(259200,authorization["maxCacheSeconds"])),datetime.fromisoformat(authorization["validUntil"])).timestamp()))
         checkpoint["expiresAt"]=scope["expiresAt"]
         data["authorizationReference"]=authorization["permissionReference"]
@@ -302,6 +306,7 @@ def main():
     p.add_argument("--max-cast-pages",type=int,default=6)
     p.add_argument("--max-seconds",type=int,default=300)
     p.add_argument("--authorization",type=Path,help="RPGLogs approval record covering collection, caching and aggregation")
+    p.add_argument("--internal-test",action="store_true",help="User-requested local testing, short-lived cache, no public distribution")
     p.add_argument("--checkpoint",type=Path,default=ROOT/"artifacts/gear/checkpoint.json")
     p.add_argument("--output",type=Path,default=ROOT/"artifacts/gear/recommendations.json")
     p.add_argument("--diagnostics",type=Path,default=ROOT/"artifacts/gear/diagnostics.json")
