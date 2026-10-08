@@ -1,0 +1,73 @@
+name: Probe RaiderIO CN secondary statistics (isolated)
+
+on:
+  push:
+    branches: [probe/raiderio-cn-gear-20261008]
+    paths: [.github/workflows/probe-raiderio-cn-stats-20261008.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Inspect documented profile fields and actual JSON stats coverage
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import re
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          ROOT="https://raider.io"
+          character={"region":"cn","realm":"shadowfang-keep","name":"质量有保证"}
+          fields_options=["gear","gear,stats","gear,statistics","stats","statistics","gear,talents"]
+          def fetch(endpoint,params):
+              url=ROOT+endpoint+"?"+urllib.parse.urlencode(params)
+              req=urllib.request.Request(url,headers={"Accept":"application/json","User-Agent":"QFXGearInspect-RaiderIOStatFieldTest/1.0"})
+              try:
+                  with urllib.request.urlopen(req,timeout=18) as res:
+                      body=res.read(250000)
+                      return res.status,json.loads(body)
+              except urllib.error.HTTPError as e:
+                  return e.code,{"http_error":e.read(300).decode("utf-8","replace")}
+              except Exception as e:
+                  return -1,{"network_error":type(e).__name__}
+          def inspect_keys(obj,prefix="",depth=0):
+              if depth>4: return []
+              out=[]
+              if isinstance(obj,dict):
+                  for key,v in obj.items():
+                      path=prefix+"."+str(key) if prefix else str(key)
+                      if re.search("stat|crit|haste|master|versatil|rating|attribute|secondary",path,re.I):
+                          out.append((path,type(v).__name__,round(v,4) if isinstance(v,(float,int)) else None))
+                      if isinstance(v,dict):out+=inspect_keys(v,path,depth+1)
+                      if isinstance(v,list) and v and isinstance(v[0],dict):
+                          out+=inspect_keys(v[0],path+"[0]",depth+1)
+              return out[:35]
+          for fields in fields_options:
+              code,payload=fetch("/api/v1/characters/profile",dict(character,fields=fields))
+              gear=payload.get("gear") or {}
+              items=gear.get("items") or {}
+              first_item=next((x for x in items.values() if isinstance(x,dict)),{}) if isinstance(items,dict) else {}
+              print("PROFILE_CASE",fields,"HTTP",code,"ROOT_KEYS",sorted(payload)[:45],"GEAR_KEYS",sorted(gear)[:35],"FIRST_ITEM_KEYS",sorted(first_item)[:35],"STAT_FIELDS",inspect_keys(payload)[:22],flush=True)
+              if code!=200:print("ERROR",str(payload)[:240],flush=True)
+          try:
+              req=urllib.request.Request(ROOT+"/swagger.json",headers={"User-Agent":"QFXGearInspect-RaiderIOStatFieldTest/1.0"})
+              with urllib.request.urlopen(req,timeout=18) as res: schema=json.load(res)
+              print("SWAGGER_FETCH",True,flush=True)
+              paths=schema.get("paths") or {}
+              p=paths.get("/api/v1/characters/profile") or {}
+              methods=p.get("get") or {}
+              fields=next((x for x in methods.get("parameters",[]) if x.get("name")=="fields"),{})
+              print("SWAGGER_ALLOWED_FIELDS",str(fields.get("description",""))[:1800],flush=True)
+              load=paths.get("/api/v1/live-tracking/character/loadout") or {}
+              get=load.get("get") or {}
+              print("SWAGGER_LOADOUT_PARAMS",[(x.get("name"),x.get("required")) for x in get.get("parameters",[])],flush=True)
+          except Exception as e:
+              print("SWAGGER_FETCH",False,type(e).__name__,flush=True)
+          PY
