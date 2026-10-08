@@ -1,0 +1,73 @@
+name: Probe raid gear per-specialization coverage 2026
+
+on:
+  push:
+    branches: [probe/raiderio-cn-gear-20261008]
+    paths: [.github/workflows/probe-cn-raid-spec20-20261008.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Measure unique characters by specialization from CN mythic boss KILLS
+        shell: bash
+        run: |
+          python - <<'PY'
+          import collections,json,time,urllib.parse,urllib.request,urllib.error
+          BASE="https://raider.io"
+          def get(endpoint,params):
+              url=BASE+endpoint+"?"+urllib.parse.urlencode(params)
+              req=urllib.request.Request(url,headers={"User-Agent":"GearInspect-CNRaid-SpecCoveragePilot/1.0","Accept":"application/json"})
+              try:
+                  with urllib.request.urlopen(req,timeout=14) as response:return response.status,json.load(response)
+              except urllib.error.HTTPError as error:return error.code,{}
+              except Exception:return -1,{}
+          raid="the-venomous-abyss";difficulty="mythic"
+          s,static=get("/api/v1/raiding/static-data",{"expansion_id":11})
+          r=next((x for x in (static.get("raids") or []) if x.get("slug")==raid),{})
+          bosses=[x.get("slug") for x in (r.get("encounters") or []) if x.get("slug")]
+          use_bosses=bosses[:2]
+          print("BOSSES",use_bosses,flush=True)
+          status,data=get("/api/v1/raiding/raid-rankings",{"raid":raid,"difficulty":difficulty,"region":"cn","limit":25,"page":0})
+          ranked=data.get("raidRankings") or []
+          selected=[x for x in ranked if (x.get("guildPrivacy") or {}).get("raidComps") is True][:12]
+          print("RANKS",status,"TOTAL_RANKS",len(ranked),"PUBLIC_GUILDS",len(selected),flush=True)
+          samples=collections.defaultdict(set); calls=collections.Counter()
+          for idx,entry in enumerate(selected):
+              guild=entry.get("guild") or {}
+              realm=(guild.get("realm") or {}).get("slug");name=guild.get("name")
+              if not realm or not name:continue
+              guild_stats=collections.Counter()
+              for boss in use_bosses:
+                  p={"raid":raid,"boss":boss,"difficulty":difficulty,"region":"cn","realm":realm,"guild":name}
+                  status,history=get("/api/v1/live-tracking/guild/boss-pulls",p);calls["pull_requests"]+=1
+                  if status!=200:calls["pull_error"]+=1;continue
+                  kills=[(x.get("details") or {}) for x in (history.get("pulls") or []) if (x.get("details") or {}).get("is_success") is True]
+                  if not kills:continue
+                  # Most recently ended successful pull, when timestamps are exposed.
+                  detail=max(kills,key=lambda x:str(x.get("pull_ended_at") or ""))
+                  params={"raid":raid,"id":detail.get("id"),"difficulty":difficulty,"region":"cn","realm":realm,"guild":name}
+                  code,comp=get("/api/v1/live-tracking/guild/raid-comps",params);calls["comp_requests"]+=1
+                  if code!=200:calls["comp_error"]+=1;continue
+                  roster=((comp.get("details") or {}).get("roster") or [])
+                  calls["successful_boss_rosters"]+=1
+                  for member in roster:
+                      char=member.get("character") or {}
+                      spec=(char.get("spec") or {}).get("id")
+                      cid=char.get("wow_character_id")
+                      items=((char.get("items") or {}).get("items") or {})
+                      complete=sum(1 for slot,item in items.items() if slot not in ("shirt","tabard") and isinstance(item,dict) and all(item.get(k) is not None for k in ("item_id","item_quality","item_level")))
+                      if isinstance(spec,int) and cid and complete>=10:
+                          samples[spec].add(cid)
+                          guild_stats["valid_gear"]+=1
+                      else:guild_stats["invalid_gear"]+=1
+                  time.sleep(.1)
+              print("GUILD",idx+1,"roster_gear_valid",guild_stats["valid_gear"],"invalid",guild_stats["invalid_gear"],"specs_covered_so_far",len(samples),flush=True)
+          totals={int(k):len(v) for k,v in samples.items()}
+          distribution=sorted(totals.items(),key=lambda x:(x[1],x[0]))
+          print("SUMMARY",json.dumps({"guilds_public":len(selected),"raid_bosses_per_guild":len(use_bosses),"counts":calls,"distinct_specs":len(samples),"specs_meeting_20":sum(n>=20 for n in totals.values()),"total_unique_spec_samples":sum(totals.values()),"min_coverage_specs":distribution[:15],"max_coverage_specs":distribution[-15:]},ensure_ascii=False),flush=True)
+          PY
