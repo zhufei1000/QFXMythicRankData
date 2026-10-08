@@ -335,6 +335,10 @@ def run(args: argparse.Namespace, client: WCLClient) -> dict:
                             diagnostics["missing_identity"] += 1
                             continue
                         stats, gear = parse_combatant(row)
+                        report_code, fight_id = report_context(row)
+                        if not report_code or not fight_id:
+                            diagnostics["no_logged_fight"] = diagnostics.get("no_logged_fight", 0) + 1
+                            continue
                         if not stats and not gear:
                             diagnostics["without_combatant"] += 1
                         current = samples.get(identity)
