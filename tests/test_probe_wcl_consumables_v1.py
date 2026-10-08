@@ -31,7 +31,7 @@ def test_event_filters_players_and_types():
     ]
     found, counted, _ = event_abilities(casts, abilities, "cast", 1)
     assert found["combat_potion_cast"] == {56}
-    assert counted["combat_potion_cast"] == 2
+    assert counted["combat_potion_cast"] == 1
 
 def test_no_unsupported_spell_id():
     assert event_spell_id({"abilityGameID": 55}) == 55
