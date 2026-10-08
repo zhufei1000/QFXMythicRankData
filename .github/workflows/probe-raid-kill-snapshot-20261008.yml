@@ -76,3 +76,46 @@ jobs:
               print("RANK",difficulty,"HTTP",status,"TOP",shape(rank),flush=True)
               print("RANK_NESTED",difficulty,shape(rank.get("rankings")),flush=True)
           PY
+
+      - name: Inspect one CN guild real boss-kill records and raid comps response
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,urllib.parse,urllib.request,urllib.error
+          BASE="https://raider.io"
+          def req(path,p):
+              url=BASE+path+"?"+urllib.parse.urlencode(p)
+              try:
+                  r=urllib.request.Request(url,headers={"User-Agent":"GearInspect-CN-Raid-Kill-Verification/1.0","Accept":"application/json"})
+                  with urllib.request.urlopen(r,timeout=16) as f:return f.status,json.load(f)
+              except urllib.error.HTTPError as e:return e.code,{"error":e.read(150).decode("utf-8","replace")}
+              except Exception as e:return -1,{"error":repr(e)[:100]}
+          def view(x):
+              if isinstance(x,dict): return {k:("list:"+str(len(v)) if isinstance(v,list) else "dict:"+str(list(v)[:25]) if isinstance(v,dict) else str(v)[:100]) for k,v in list(x.items())[:40]}
+              if isinstance(x,list):return {"length":len(x),"first":view(x[0]) if x else None}
+              return str(x)[:150]
+          raid="the-venomous-abyss";difficulty="mythic"
+          _,st=req("/api/v1/raiding/static-data",{"expansion_id":11})
+          meta=next((a for a in st.get("raids",[]) if a.get("slug")==raid),{})
+          bosses=[x.get("slug") for x in meta.get("encounters",[]) if isinstance(x,dict)]
+          print("BOSSES",bosses,flush=True)
+          status,ranks=req("/api/v1/raiding/raid-rankings",{"raid":raid,"difficulty":difficulty,"region":"cn","limit":5,"page":0})
+          print("CN_RANK",status,"FIRST",view((ranks.get("raidRankings") or [None])[0]),flush=True)
+          for i,entry in enumerate((ranks.get("raidRankings") or [])[:2]):
+              guild=entry.get("guild") or {}
+              server=guild.get("realm") or {}
+              region=guild.get("region") or {}
+              print("GUILD_ENTRY",i,"DETAIL",view(guild),flush=True)
+              realm=server.get("slug") if isinstance(server,dict) else server
+              regionv=region.get("slug") if isinstance(region,dict) else region
+              name=guild.get("name")
+              if not (realm and name):continue
+              print("SELECTED_GUILD",realm,name,"region",regionv,flush=True)
+              for boss in bosses[:3]:
+                  status,pulls=req("/api/v1/live-tracking/guild/boss-pulls",{"raid":raid,"boss":boss,"difficulty":difficulty,"region":"cn","realm":realm,"guild":name})
+                  print("BOSS_PULLS",boss,"HTTP",status,"ROOT",view(pulls),flush=True)
+                  for k,v in pulls.items():
+                      if isinstance(v,list) and v:
+                          print("PULL_FIRST",boss,k,view(v[0]),flush=True)
+              break
+          PY
