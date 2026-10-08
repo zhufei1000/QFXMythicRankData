@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "mappings": {},
+  "note": "Intentionally empty until exact SpellID to ItemID and quality mappings have verifiable source evidence. Generic food buffs must not identify a specific dish."
+}

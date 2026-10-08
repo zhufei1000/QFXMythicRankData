@@ -1,0 +1,246 @@
+{
+  "source": "https://www.raidbots.com/static/data/live/talents.json",
+  "sha256": "c7aa8c79db6dadcd32d0ac3a436003d90a673f4aff34c2515d937a0cf441fa88",
+  "specs": [
+    {
+      "id": 250,
+      "className": "DeathKnight",
+      "specName": "Blood",
+      "name": "Blood Death Knight"
+    },
+    {
+      "id": 251,
+      "className": "DeathKnight",
+      "specName": "Frost",
+      "name": "Frost Death Knight"
+    },
+    {
+      "id": 252,
+      "className": "DeathKnight",
+      "specName": "Unholy",
+      "name": "Unholy Death Knight"
+    },
+    {
+      "id": 577,
+      "className": "DemonHunter",
+      "specName": "Havoc",
+      "name": "Havoc Demon Hunter"
+    },
+    {
+      "id": 581,
+      "className": "DemonHunter",
+      "specName": "Vengeance",
+      "name": "Vengeance Demon Hunter"
+    },
+    {
+      "id": 1480,
+      "className": "DemonHunter",
+      "specName": "Devourer",
+      "name": "Devourer Demon Hunter"
+    },
+    {
+      "id": 102,
+      "className": "Druid",
+      "specName": "Balance",
+      "name": "Balance Druid"
+    },
+    {
+      "id": 103,
+      "className": "Druid",
+      "specName": "Feral",
+      "name": "Feral Druid"
+    },
+    {
+      "id": 104,
+      "className": "Druid",
+      "specName": "Guardian",
+      "name": "Guardian Druid"
+    },
+    {
+      "id": 105,
+      "className": "Druid",
+      "specName": "Restoration",
+      "name": "Restoration Druid"
+    },
+    {
+      "id": 1467,
+      "className": "Evoker",
+      "specName": "Devastation",
+      "name": "Devastation Evoker"
+    },
+    {
+      "id": 1468,
+      "className": "Evoker",
+      "specName": "Preservation",
+      "name": "Preservation Evoker"
+    },
+    {
+      "id": 1473,
+      "className": "Evoker",
+      "specName": "Augmentation",
+      "name": "Augmentation Evoker"
+    },
+    {
+      "id": 253,
+      "className": "Hunter",
+      "specName": "BeastMastery",
+      "name": "Beast Mastery Hunter"
+    },
+    {
+      "id": 254,
+      "className": "Hunter",
+      "specName": "Marksmanship",
+      "name": "Marksmanship Hunter"
+    },
+    {
+      "id": 255,
+      "className": "Hunter",
+      "specName": "Survival",
+      "name": "Survival Hunter"
+    },
+    {
+      "id": 62,
+      "className": "Mage",
+      "specName": "Arcane",
+      "name": "Arcane Mage"
+    },
+    {
+      "id": 63,
+      "className": "Mage",
+      "specName": "Fire",
+      "name": "Fire Mage"
+    },
+    {
+      "id": 64,
+      "className": "Mage",
+      "specName": "Frost",
+      "name": "Frost Mage"
+    },
+    {
+      "id": 268,
+      "className": "Monk",
+      "specName": "Brewmaster",
+      "name": "Brewmaster Monk"
+    },
+    {
+      "id": 269,
+      "className": "Monk",
+      "specName": "Windwalker",
+      "name": "Windwalker Monk"
+    },
+    {
+      "id": 270,
+      "className": "Monk",
+      "specName": "Mistweaver",
+      "name": "Mistweaver Monk"
+    },
+    {
+      "id": 65,
+      "className": "Paladin",
+      "specName": "Holy",
+      "name": "Holy Paladin"
+    },
+    {
+      "id": 66,
+      "className": "Paladin",
+      "specName": "Protection",
+      "name": "Protection Paladin"
+    },
+    {
+      "id": 70,
+      "className": "Paladin",
+      "specName": "Retribution",
+      "name": "Retribution Paladin"
+    },
+    {
+      "id": 256,
+      "className": "Priest",
+      "specName": "Discipline",
+      "name": "Discipline Priest"
+    },
+    {
+      "id": 257,
+      "className": "Priest",
+      "specName": "Holy",
+      "name": "Holy Priest"
+    },
+    {
+      "id": 258,
+      "className": "Priest",
+      "specName": "Shadow",
+      "name": "Shadow Priest"
+    },
+    {
+      "id": 259,
+      "className": "Rogue",
+      "specName": "Assassination",
+      "name": "Assassination Rogue"
+    },
+    {
+      "id": 260,
+      "className": "Rogue",
+      "specName": "Outlaw",
+      "name": "Outlaw Rogue"
+    },
+    {
+      "id": 261,
+      "className": "Rogue",
+      "specName": "Subtlety",
+      "name": "Subtlety Rogue"
+    },
+    {
+      "id": 262,
+      "className": "Shaman",
+      "specName": "Elemental",
+      "name": "Elemental Shaman"
+    },
+    {
+      "id": 263,
+      "className": "Shaman",
+      "specName": "Enhancement",
+      "name": "Enhancement Shaman"
+    },
+    {
+      "id": 264,
+      "className": "Shaman",
+      "specName": "Restoration",
+      "name": "Restoration Shaman"
+    },
+    {
+      "id": 265,
+      "className": "Warlock",
+      "specName": "Affliction",
+      "name": "Affliction Warlock"
+    },
+    {
+      "id": 266,
+      "className": "Warlock",
+      "specName": "Demonology",
+      "name": "Demonology Warlock"
+    },
+    {
+      "id": 267,
+      "className": "Warlock",
+      "specName": "Destruction",
+      "name": "Destruction Warlock"
+    },
+    {
+      "id": 71,
+      "className": "Warrior",
+      "specName": "Arms",
+      "name": "Arms Warrior"
+    },
+    {
+      "id": 72,
+      "className": "Warrior",
+      "specName": "Fury",
+      "name": "Fury Warrior"
+    },
+    {
+      "id": 73,
+      "className": "Warrior",
+      "specName": "Protection",
+      "name": "Protection Warrior"
+    }
+  ]
+}

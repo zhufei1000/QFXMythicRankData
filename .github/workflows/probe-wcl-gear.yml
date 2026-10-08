@@ -1,0 +1,87 @@
+name: Collect gear recommendations (manual internal validation)
+on:
+  workflow_dispatch:
+    inputs:
+      specs:
+        description: Comma-separated SpecIDs; validate Arms first, keep batches small
+        default: '71'
+        required: true
+      mode:
+        description: Gameplay mode
+        type: choice
+        options: [both, mythic_plus, raid]
+        default: both
+      target:
+        description: Valid unique characters per spec/mode (1 to 50)
+        default: '50'
+      checkpoint_run:
+        description: Prior run ID to resume (same scope, expires after 3 days)
+        default: ''
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: qfx-gear-manual
+  cancel-in-progress: false
+jobs:
+  collect:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Verify collector and statistics
+        run: python -m pytest -q tests/test_gear_recommendations.py
+      - name: Resume private checkpoint
+        if: inputs.checkpoint_run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.checkpoint_run }}
+        run: |
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || exit 1
+          gh run download "$RUN_ID" --name qfx-gear-checkpoint --dir artifacts/gear
+      - name: Collect bounded batch using existing WCL secrets
+        id: collect
+        env:
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
+          SPECS: ${{ inputs.specs }}
+          MODE: ${{ inputs.mode }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          set +e
+          python scripts/collect_gear_recommendations.py --specs "$SPECS" --mode "$MODE" --target "$TARGET" --max-tasks 6 --max-seconds 780
+          echo "result=$?" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Build internal test addons
+        if: always()
+        run: |
+          if test -f artifacts/gear/recommendations.json; then
+            python scripts/build_gear_databases.py --input artifacts/gear/recommendations.json --internal-test
+          fi
+      - name: Upload resumable short-lived checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qfx-gear-checkpoint
+          path: artifacts/gear/checkpoint.json
+          retention-days: 3
+          if-no-files-found: warn
+      - name: Upload anonymous diagnostics and private-test data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qfx-gear-validation
+          path: |
+            artifacts/gear/diagnostics.json
+            artifacts/gear/recommendations.json
+            artifacts/gear/QFXRecommendationData-internal.zip
+          retention-days: 3
+          if-no-files-found: warn
+      - name: Mark incomplete collection honestly
+        if: steps.collect.outputs.result != '0'
+        run: exit 1

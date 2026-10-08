@@ -1,0 +1,10 @@
+{
+  "seasonID": 18,
+  "seasonSlug": "season-mn-2",
+  "patch": "12.1.0",
+  "region": "world",
+  "windowDays": 28,
+  "raid": {"zoneID": 53, "zoneName": "The Venomous Abyss", "difficulty": 5, "difficultyName": "Mythic"},
+  "mythic_plus": {"zoneID": 55, "zoneName": "Mythic+ Season 2", "difficulty": 10, "difficultyName": "Mythic+"},
+  "provenance": "Season IDs verified from current Raider.IO static data; WCL zones validated at run time against official V2 worldData. Encounter coverage is recorded, not claimed universal."
+}

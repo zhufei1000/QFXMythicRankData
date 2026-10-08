@@ -7,3 +7,8 @@ build/
 .env
 .env.*
 .release/.env
+
+.gear-metadata/
+artifacts/gear/
+artifacts/previous-gear/
+artifacts/previous-consumables/
