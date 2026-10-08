@@ -6,7 +6,7 @@ The controller waits for quota locally, never inside a running Actions job.
 """
 import argparse
 import base64
-from datetime import datetime,timezone
+from datetime import datetime,timezone,timedelta
 import json
 from pathlib import Path
 import re
@@ -50,12 +50,13 @@ def publish_local_progress(progress,package=None):
         shutil.copyfile(package,temporary)
         temporary.replace(DELIVERY/"GearInspect_RealTestData_1.0.0.zip")
     write(DELIVERY/"real-test-progress.json",progress)
+    updated=datetime.fromisoformat(progress["updatedAt"]).astimezone(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S") if progress.get("updatedAt") else "—"
     lines=["# GearInspect 真实内部测试数据进度", "", "仅供本地测试；未取得公开分发授权，不用于 CurseForge/GitHub Release。", "",
-           f"状态：{progress.get('status')}；更新时间（UTC）：{progress.get('updatedAt')}。",
+           f"状态：{progress.get('status')}；更新时间（北京时间）：{updated}。",
            f"真实有效样本：{progress.get('totalValidSamples',0)}/4000；有数据的专精/玩法：{progress.get('scopesWithData',0)}/80；达到50人的专精/玩法：{progress.get('completeScopes',0)}/80。",
            f"GraphQL 请求累计：{progress.get('apiRequests',0)}；积分增量估计：{progress.get('pointsConsumedEstimate',0)}（共享账户估计，不含初次查询）。", "",
            "安装包：GearInspect_RealTestData_1.0.0.zip。将其中全部目录解压到游戏 AddOns，重启后启用 QFXGearData/QFXConsumableData。不要与模拟数据库混装。",
-           "数据库包含真实装备、属性和已观测消耗品 SpellID；未验证具体物品的消耗品保持未知。少于50人会显示样本不足。", "",
+           "数据库包含真实装备、属性和已观测消耗品 SpellID；未验证具体物品的消耗品保持未知。少于50人会显示样本不足。消耗品使用率按法术效果族统计，品质为推荐品质，不能据同一 Buff 区分实际使用品质。", "",
            "| SpecID | Class / Spec | 大秘境 | 团本 |", "|---|---|---:|---:|"]
     matrix={}
     for row in progress.get("coverage",[]):matrix.setdefault(row["specID"],{})[row["mode"]]=row
