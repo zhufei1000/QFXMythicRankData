@@ -1,0 +1,135 @@
+name: Probe global boss-specialization unique kill gear coverage
+
+on:
+  push:
+    branches:
+      - probe/raiderio-cn-gear-20261008
+    paths:
+      - .github/workflows/probe-world-boss-spec-coverage-20261008.yml
+
+permissions:
+  contents: read
+
+jobs:
+  pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - name: Traverse ranked worldwide guild boss kills, accumulate each spec up to 20 distinct players
+        shell: bash
+        run: |
+          python - <<'PY'
+          import collections,json,time,urllib.parse,urllib.request,urllib.error
+          BASE="https://raider.io"
+          RAID="the-venomous-abyss"
+          DIFFICULTY="mythic"
+          TARGET=20
+          GUILD_LIMIT=35
+          MIN_SLOTS=10
+          counts=collections.Counter()
+          def request(endpoint,args):
+              url=BASE+endpoint+"?"+urllib.parse.urlencode(args)
+              req=urllib.request.Request(url,headers={"User-Agent":"GearInspect-BossSpecGlobalProof/1.0","Accept":"application/json"})
+              for attempt in range(3):
+                  try:
+                      with urllib.request.urlopen(req, timeout=19) as resp:
+                          counts["http_200"]+=1
+                          return resp.status,json.load(resp)
+                  except urllib.error.HTTPError as e:
+                      counts["http_"+str(e.code)]+=1
+                      if e.code==429 and attempt<2:
+                          wait=max(2,int(e.headers.get("Retry-After","2")))
+                          time.sleep(min(wait,15))
+                          continue
+                      return e.code,{}
+                  except Exception:
+                      counts["network_errors"]+=1
+                      if attempt==0:time.sleep(1)
+                      else:return -1,{}
+              return -1,{}
+          _,static=request("/api/v1/raiding/static-data",{"expansion_id":11})
+          raid=next((x for x in static.get("raids",[]) if x.get("slug")==RAID),None)
+          assert raid,"MISSING_RAID"
+          bosses=raid.get("encounters",[])
+          selections=[bosses[0],bosses[-1]]
+          print("CONFIG",json.dumps({"raid":RAID,"difficulty":DIFFICULTY,"bosses":[x.get("slug") for x in selections],"target_per_spec":TARGET,"max_world_guild_rank":GUILD_LIMIT}),flush=True)
+          for boss in selections:
+              slug=boss["slug"]
+              status,board=request("/api/v1/raiding/boss-rankings",{"raid":RAID,"boss":slug,"difficulty":DIFFICULTY,"region":"world"})
+              ranks=board.get("bossRankings") or []
+              print("BOSS_RANKINGS",slug,"HTTP",status,"rows",len(ranks),flush=True)
+              collected=collections.defaultdict(set)
+              names={}
+              regions=collections.Counter()
+              public=0
+              kills=0
+              failures=collections.Counter()
+              for pos,row in enumerate(ranks[:GUILD_LIMIT],1):
+                  guild=row.get("guild") or {}
+                  realm=(guild.get("realm") or {}).get("slug")
+                  region=(guild.get("region") or {}).get("slug")
+                  name=guild.get("name")
+                  if not all((realm,region,name)):
+                      failures["guild_identification"]+=1;continue
+                  args={"raid":RAID,"boss":slug,"difficulty":DIFFICULTY,"region":region,"realm":realm,"guild":name}
+                  status,pulls=request("/api/v1/live-tracking/guild/boss-pulls",args)
+                  if status!=200:
+                      failures["pull_http_"+str(status)]+=1;continue
+                  events=[r.get("details") or {} for r in pulls.get("pulls",[]) if (r.get("details") or {}).get("is_success") is True]
+                  if not events:
+                      failures["no_logged_kill"]+=1;continue
+                  chosen=max(events,key=lambda x:str(x.get("pull_ended_at") or ""))
+                  status,comp=request("/api/v1/live-tracking/guild/raid-comps",{
+                      "raid":RAID,"difficulty":DIFFICULTY,"region":region,"realm":realm,"guild":name,"id":chosen.get("id")
+                  })
+                  if status!=200:
+                      failures["comp_http_"+str(status)]+=1;continue
+                  roster=(comp.get("details") or {}).get("roster") or []
+                  if not roster:
+                      failures["empty_roster"]+=1;continue
+                  public+=1
+                  kills+=1
+                  regions[region]+=1
+                  for player in roster:
+                      char=player.get("character") or {}
+                      spec=char.get("spec") or {}
+                      sid=spec.get("id")
+                      cid=char.get("wow_character_id")
+                      items=((char.get("items") or {}).get("items") or {})
+                      if not isinstance(sid,int) or not cid or not isinstance(items,dict):
+                          failures["missing_spec_identity_or_gear"]+=1;continue
+                      valid=[(slot,gear.get("item_id"),gear.get("item_quality"),gear.get("item_level"))
+                          for slot,gear in items.items()
+                          if slot not in ("shirt","tabard") and isinstance(gear,dict)
+                          and isinstance(gear.get("item_id"),int) and gear.get("item_id")>0
+                          and isinstance(gear.get("item_quality"),int)
+                          and isinstance(gear.get("item_level"),(int,float)) and gear.get("item_level")>0]
+                      if len(valid)<MIN_SLOTS:
+                          failures["incomplete_equipment"]+=1;continue
+                      identifier=(region,cid)
+                      names[sid]=spec.get("name",str(sid))
+                      if identifier in collected[sid]:
+                          failures["duplicate"]+=1;continue
+                      if len(collected[sid])<TARGET:
+                          collected[sid].add(identifier)
+                      else:
+                          failures["spec_full"]+=1
+                  if pos%10==0:
+                      print("PROGRESS",slug,"guild_rank_checked",pos,"valid_rosters",kills,"specs_with_any",len(collected),"specs_at20",sum(len(s)>=20 for s in collected.values()),flush=True)
+                  time.sleep(.17)
+              specs=sorted(((sid,names.get(sid,str(sid)),len(group)) for sid,group in collected.items()),key=lambda a:(-a[2],a[0]))
+              print("BOSS_RESULT",json.dumps({
+                  "boss":slug,
+                  "world_rank_guilds_checked":min(GUILD_LIMIT,len(ranks)),
+                  "public_kill_rosters":public,
+                  "covered_regions":dict(regions),
+                  "specs_with_samples":len(specs),
+                  "specs_at20":sum(s[2]>=TARGET for s in specs),
+                  "specs_at10":sum(s[2]>=10 for s in specs),
+                  "valid_unique_samples_capped20":sum(s[2] for s in specs),
+                  "top_specs":specs[:15],
+                  "bottom_specs":specs[-12:],
+                  "failures":dict(failures),
+              },ensure_ascii=False),flush=True)
+          print("HTTP_SUMMARY",dict(counts),flush=True)
+          PY
