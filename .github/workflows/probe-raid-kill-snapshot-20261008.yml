@@ -48,3 +48,31 @@ jobs:
                   print("RAID_META",{k:raid.get(k) for k in ("slug","name","id","tier","is_current")},flush=True)
           except Exception as e: print("STATIC_FAIL",repr(e)[:240])
           PY
+
+      - name: Probe one CN guild raid kill roster from public endpoints
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, urllib.request, urllib.parse, urllib.error
+          BASE="https://raider.io"
+          def req(path,p):
+              url=BASE+path+"?"+urllib.parse.urlencode(p)
+              request=urllib.request.Request(url,headers={"User-Agent":"GearInspect-RaidSnapshotProof/1.0","Accept":"application/json"})
+              try:
+                  with urllib.request.urlopen(request,timeout=19) as response:return response.status,json.load(response)
+              except urllib.error.HTTPError as e: return e.code,{"error":e.read(180).decode("utf-8","replace")}
+              except Exception as e: return -1,{"error":str(e)[:90]}
+          def shape(x):
+              if isinstance(x,dict):
+                  return {k:("list:"+str(len(v)) if isinstance(v,list) else "dict:"+str(list(v)[:15]) if isinstance(v,dict) else str(v)[:70]) for k,v in list(x.items())[:25]}
+              if isinstance(x,list):
+                  return {"list_length":len(x),"first":shape(x[0]) if x else None}
+              return str(x)[:100]
+          rstatus,static=req("/api/v1/raiding/static-data",{"expansion_id":11})
+          rs=next((x for x in static.get("raids",[]) if x.get("slug")=="the-venomous-abyss"),None)
+          print("RAID_STATIC",rstatus,shape(rs),flush=True)
+          for difficulty in ("mythic","heroic"):
+              status,rank=req("/api/v1/raiding/raid-rankings",{"raid":"the-venomous-abyss","difficulty":difficulty,"region":"cn","page":0,"limit":10})
+              print("RANK",difficulty,"HTTP",status,"TOP",shape(rank),flush=True)
+              print("RANK_NESTED",difficulty,shape(rank.get("rankings")),flush=True)
+          PY
