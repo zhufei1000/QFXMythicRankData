@@ -1,0 +1,53 @@
+name: Probe RaiderIO CN live loadout and stat models
+
+on:
+  push:
+    branches: [probe/raiderio-cn-gear-20261008]
+    paths: [.github/workflows/probe-raiderio-cn-live-stat-20261008.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Test live tracking character loadout and Swagger statistics exposure
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          def http(url):
+              try:
+                  req=urllib.request.Request(url,headers={"User-Agent":"QFXGearInspect-LiveStatProbe/1.0","Accept":"application/json"})
+                  with urllib.request.urlopen(req,timeout=15) as res:
+                      return res.status,json.load(res)
+              except urllib.error.HTTPError as exc:
+                  return exc.code,{"error":exc.read(200).decode("utf-8","replace")}
+              except Exception as exc:
+                  return -1,{"error":str(exc)[:150]}
+          url="https://raider.io/api/v1/live-tracking/character/loadout?"+urllib.parse.urlencode({"region":"cn","realm":"shadowfang-keep","name":"质量有保证"})
+          status,payload=http(url)
+          print("CN_LIVE_LOADOUT_HTTP",status,"TOP_KEYS",list(payload.keys())[:40],flush=True)
+          print("CN_LIVE_LOADOUT_BODY_TYPE",type(payload).__name__,"ERROR",str(payload.get("error",""))[:170],flush=True)
+          if status==200:
+              print("CN_LIVE_LOADOUT_SECONDARY_KEYS",[k for k in payload if any(w in k.lower() for w in ("stat","crit","haste","master","versat"))],flush=True)
+
+          status,schema=http("https://raider.io/swagger.json")
+          print("SWAGGER_HTTP",status,flush=True)
+          if status!=200: raise SystemExit(0)
+          paths=schema.get("paths") or {}
+          print("CHARACTER_STAT_PATHS",[p for p in paths if (("character" in p) and ("stat" in p or "profile" in p or "loadout" in p))],flush=True)
+          defs=schema.get("definitions") or {}
+          matches=[]
+          for name,definition in defs.items():
+              props=definition.get("properties") if isinstance(definition,dict) else {}
+              if not isinstance(props,dict):continue
+              indicators=[k for k in props if k.lower() in ("crit","haste","mastery","versatility","stats","statistics","secondary_stats","melee_crit","spell_crit") or k.lower().startswith(("melee_haste","spell_haste","versatility_"))]
+              if indicators: matches.append((name,indicators))
+          print("SWAGGER_STAT_DEFINITIONS",matches[:30],flush=True)
+          PY
