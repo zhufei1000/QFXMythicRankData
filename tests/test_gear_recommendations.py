@@ -33,6 +33,8 @@ def test_quantiles_linear_interpolation():
     assert d==dict(min=1,max=10,median=5.5,p10=1.9,p25=3.25,p75=7.75,p90=9.1,sampleCount=10)
     assert distribution([]) is None
     assert distribution([7])["p10"]==7
+    constant=distribution([100/3])
+    assert constant["min"]==constant["p10"]==constant["median"]==constant["max"]
 
 
 def test_inventory_metadata_prevents_filtered_array_slot_shift():

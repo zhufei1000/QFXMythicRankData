@@ -22,7 +22,7 @@ def distribution(values):
         pos = (len(values)-1)*p
         lo = int(pos)
         hi = min(lo+1,len(values)-1)
-        return round(values[lo]+(values[hi]-values[lo])*(pos-lo),4)
+        return min(values[-1],max(values[0],round(values[lo]+(values[hi]-values[lo])*(pos-lo),4)))
     return {"min":values[0],"max":values[-1],"median":percentile(.5),"p10":percentile(.1),"p25":percentile(.25),"p75":percentile(.75),"p90":percentile(.9),"sampleCount":len(values)}
 
 
