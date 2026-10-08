@@ -107,7 +107,7 @@ def event_abilities(events: list[dict], abilities: dict[int, str],
         if source == "buff" and ev.get("targetID") != actor:
             continue
         typ = str(ev.get("type") or "").casefold()
-        if source == "cast" and typ not in ("cast", "begincast"):
+        if source == "cast" and typ != "cast":
             continue
         if source == "buff" and typ not in (
             "applybuff", "refreshbuff", "applybuffstack", "refreshbuffstack",
@@ -207,8 +207,8 @@ def run_sample(client: WCLClient, player: dict, args: argparse.Namespace) -> dic
     for _ in range(args.max_event_pages):
         data = client.query(EVENT_QUERY, {
             "code": player["code"], "fightIDs": [player["fight"]],
-            "actor": actor, "buffStart": starts["buff"],
-            "castStart": starts["cast"]}, kind="consumable-events")
+            "actor": actor, "buffStart": (starts["buff"] if starts["buff"] != -1 else None),
+            "castStart": (starts["cast"] if starts["cast"] != -1 else None)}, kind="consumable-events")
         report = ((data.get("reportData") or {}).get("report") or {})
         master = report.get("masterData") or {}
         abilities = {
