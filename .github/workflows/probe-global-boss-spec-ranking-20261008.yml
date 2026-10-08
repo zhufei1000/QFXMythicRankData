@@ -1,0 +1,51 @@
+name: Verify global raid boss rankings vs spec leaderboard
+
+on:
+  push:
+    branches: [probe/raiderio-cn-gear-20261008]
+    paths: [.github/workflows/probe-global-boss-spec-ranking-20261008.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Inspect public per-boss ranking capabilities with small real calls
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, urllib.parse, urllib.request, urllib.error
+          def call(path, params):
+              uri="https://raider.io"+path+"?"+urllib.parse.urlencode(params)
+              req=urllib.request.Request(uri,headers={"User-Agent":"GearInspect-BossSpecRankingVerifier/1.0","Accept":"application/json"})
+              try:
+                  with urllib.request.urlopen(req,timeout=17) as resp: return resp.status,json.load(resp)
+              except urllib.error.HTTPError as err:return err.code,{"error":err.read(150).decode("utf-8","replace")}
+              except Exception as err:return -1,{"error":type(err).__name__}
+          _,schema=call("/swagger.json",{})
+          paths=schema.get("paths") or {}
+          for key in ("/api/v1/raiding/boss-rankings","/api/v1/raiding/raid-rankings","/api/mythic-plus/rankings/specs","/api/v1/live-tracking/guild/raid-comps"):
+              get=(paths.get(key) or {}).get("get") or {}
+              print("SWAGGER",key,"PARAMS",[(p.get("name"),p.get("required")) for p in get.get("parameters",[])],"DESCRIPTION",str(get.get("description") or get.get("summary"))[:200],flush=True)
+          _,st=call("/api/v1/raiding/static-data",{"expansion_id":11})
+          raid=next((x for x in st.get("raids",[]) if x.get("slug")=="the-venomous-abyss"),{})
+          boss=(raid.get("encounters") or [{}])[0].get("slug","nekzali-the-soulcoiler")
+          print("BOSS",boss,flush=True)
+          for region in ("world","cn","us","eu"):
+              args={"raid":"the-venomous-abyss","boss":boss,"difficulty":"mythic","region":region}
+              status,data=call("/api/v1/raiding/boss-rankings",args)
+              print("BOSS_RANK",region,"HTTP",status,"ROOT",list(data)[:25],flush=True)
+              for k,v in data.items():
+                  if isinstance(v,list):
+                      print("BOSS_RANK_LIST",region,k,"LENGTH",len(v),"FIRST_KEYS",list(v[0])[:30] if v and isinstance(v[0],dict) else [],flush=True)
+                      if v and isinstance(v[0],dict):
+                          print("BOSS_RANK_FIELDS",region,{field:type(v[0].get(field)).__name__ for field in ("guild","character","spec","specId","rank","encounter") if field in v[0]},flush=True)
+              if status!=200:print("BOSS_RANK_ERR",region,str(data)[:140],flush=True)
+          for extra in ({"class":"warrior","spec":"arms"},{"specId":71}):
+              args={"raid":"the-venomous-abyss","boss":boss,"difficulty":"mythic","region":"us",**extra}
+              status,data=call("/api/v1/raiding/boss-rankings",args)
+              print("SPEC_FILTER_UNDOCUMENTED",extra,"HTTP",status,"KEYS",list(data)[:15],flush=True)
+          PY
