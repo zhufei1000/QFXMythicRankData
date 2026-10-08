@@ -1,11 +1,6 @@
 name: Probe WCL Consumables (flask potion food)
 
 on:
-  pull_request:
-    paths:
-      - "scripts/probe_wcl_consumables_v1.py"
-      - "tests/test_probe_wcl_consumables_v1.py"
-      - ".github/workflows/probe-wcl-consumables.yml"
   workflow_dispatch:
 
 permissions:
@@ -13,7 +8,7 @@ permissions:
 
 jobs:
   validate:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
