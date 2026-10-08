@@ -176,8 +176,9 @@ def player_identity(row: dict) -> str | None:
     return None
 
 def report_context(row: dict) -> tuple[str | None, int | None]:
-    report = row.get("report") if isinstance(row.get("report"), dict) else {}
-    code = report.get("code") or row.get("reportCode")
+    raw_report = row.get("report")
+    report = raw_report if isinstance(raw_report, dict) else {}
+    code = report.get("code") or row.get("reportCode") or (raw_report if isinstance(raw_report, str) else None)
     fight = row.get("fightID") or row.get("fightId") or report.get("fightID")
     return (str(code), int(fight) if isinstance(fight, int) else None) if code else (None, None)
 
@@ -320,7 +321,12 @@ def run(args: argparse.Namespace, client: WCLClient) -> dict:
                     diagnostics["pages"] += 1
                     diagnostics["ranking_rows"] += len(rows)
                     if rows and not diagnostics["schema_keys"]:
-                        diagnostics["schema_keys"] = sorted(rows[0].keys())
+                        first = rows[0]
+                        diagnostics["schema_keys"] = sorted(first.keys())
+                        diagnostics["report_type"] = type(first.get("report")).__name__
+                        diagnostics["report_keys"] = sorted(first["report"].keys()) if isinstance(first.get("report"), dict) else []
+                        diagnostics["report_context_valid"] = bool(report_context(first)[0])
+                        diagnostics["gear_keys"] = sorted(first["gear"][0].keys()) if isinstance(first.get("gear"), list) and first["gear"] and isinstance(first["gear"][0], dict) else []
                     if not rows:
                         break
                     for row in rows:
@@ -335,7 +341,8 @@ def run(args: argparse.Namespace, client: WCLClient) -> dict:
                         if current is None or (len(stats) == 4 and gear and
                                               not (len(current["stats"]) == 4 and current["gear"])):
                             samples[identity] = {"stats": stats, "gear": gear,
-                                                 "report": report_context(row)}
+                                                 "report": report_context(row),
+                                                 "_name": str(row.get("name") or (row.get("character") or {}).get("name") or "").casefold()}
                         if len(samples) >= args.target:
                             break
                     zone_selected, encounter_selected = zone, encounter
@@ -366,11 +373,27 @@ def run(args: argparse.Namespace, client: WCLClient) -> dict:
                     report = (data.get("reportData") or {}).get("report") or {}
                     # Conservative: backfill only if exactly one candidate for this spec
                     # in the fight, so we never attribute another player's gear.
-                    candidates = find_combatants(report)
-                    parsed = [(extract_stats(c), normalize_gear(gear_list(c))) for c in candidates]
-                    valid = [(s, g) for s, g in parsed if len(s) == 4 and g]
-                    if len(valid) == 1:
-                        sample["stats"], sample["gear"] = valid[0]
+                    events_obj = report.get("events") or {}
+                    event_rows = events_obj.get("data") if isinstance(events_obj, dict) else []
+                    actors = (report.get("masterData") or {}).get("actors") or []
+                    actor_ids = {a.get("id") for a in actors if isinstance(a, dict) and
+                                 str(a.get("name") or "").casefold() == sample.get("_name")}
+                    if len(diagnostics.setdefault("report_shapes", [])) < 3:
+                        diagnostics["report_shapes"].append({
+                            "report_keys": sorted(report),
+                            "details_type": type(report.get("playerDetails")).__name__,
+                            "details_keys": sorted(report["playerDetails"]) if isinstance(report.get("playerDetails"), dict) else [],
+                            "event_count": len(event_rows or []),
+                            "event_keys": sorted(event_rows[0]) if event_rows and isinstance(event_rows[0], dict) else [],
+                            "actor_count": len(actors), "actor_ids_matched": len(actor_ids)})
+                    for event in event_rows or []:
+                        if not isinstance(event, dict) or event.get("sourceID") not in actor_ids:
+                            continue
+                        s, g = parse_combatant(event)
+                        if len(s) == 4 and g:
+                            sample["stats"], sample["gear"] = s, g
+                            break
+                    # We never borrow another player's info from the same report.
                 except Exception as exc:
                     diagnostics["errors"].append(("backfill: " + str(exc))[:220])
             diagnostics["report_backfills_attempted"] = attempted
@@ -416,7 +439,8 @@ def main() -> None:
               result["complete_samples"], "seconds", result["elapsed_seconds"],
               "WCL requests total", result["api_requests"], flush=True)
     # Fail to signal that the 100-player target was NOT achieved.
-    if any(x["sample_count"] < args.target for x in data["modes"].values()):
+    if any(x["sample_count"] < args.target or x["complete_samples"] == 0
+           for x in data["modes"].values()):
         raise SystemExit(2)
 
 if __name__ == "__main__":
