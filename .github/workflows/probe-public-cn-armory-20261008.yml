@@ -41,7 +41,7 @@ jobs:
                   try:
                       data=json.loads(payload)
                       if isinstance(data,dict):
-                          print("JSON",label,"RESPONSE_CODE",data.get("code"),"ROOT_KEYS",[mask(x) for x in data.keys()],flush=True)
+                          print("JSON",label,"RESPONSE_CODE",data.get("code"),"MESSAGE",str(data.get("message",""))[:160],"DATA_TYPE",type(data.get("data")).__name__,"ROOT_KEYS",[mask(x) for x in data.keys()],flush=True)
                           value=data.get("data")
                           if isinstance(value,dict):
                               print("DATA_KEYS",label,[mask(x) for x in value.keys()][:45],flush=True)
