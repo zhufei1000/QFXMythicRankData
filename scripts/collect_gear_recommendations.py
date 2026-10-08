@@ -219,7 +219,7 @@ def run(opt):
         scope["expiresAt"]=min(checkpoint["expiresAt"],int(min(now+timedelta(seconds=min(259200,authorization["maxCacheSeconds"])),datetime.fromisoformat(authorization["validUntil"])).timestamp()))
         checkpoint["expiresAt"]=scope["expiresAt"]
         data["authorizationReference"]=authorization["permissionReference"]
-        client=WCLClient(max_seconds=opt.max_seconds)
+        client=WCLClient(max_seconds=opt.max_seconds,reserve=getattr(opt,"quota_reserve",.25))
         meta=client.query(META,kind="metadata")
         zones=meta.get("worldData",{}).get("zones",[])
         diag["zoneCandidates"]=[{"id":z["id"],"name":z["name"],"difficulties":z["difficulties"],"partitions":z["partitions"]} for z in zones if z["id"] in {season[m]["zoneID"] for m in modes}]
@@ -322,12 +322,13 @@ def main():
     p.add_argument("--max-seconds",type=int,default=300)
     p.add_argument("--authorization",type=Path,help="RPGLogs approval record covering collection, caching and aggregation")
     p.add_argument("--internal-test",action="store_true",help="User-requested local testing, short-lived cache, no public distribution")
+    p.add_argument("--quota-reserve",type=float,default=.25,help="Fraction of hourly quota kept unused (0.15 to 0.5)")
     p.add_argument("--checkpoint",type=Path,default=ROOT/"artifacts/gear/checkpoint.json")
     p.add_argument("--output",type=Path,default=ROOT/"artifacts/gear/recommendations.json")
     p.add_argument("--diagnostics",type=Path,default=ROOT/"artifacts/gear/diagnostics.json")
     o=p.parse_args()
     o.specs=[int(x) for x in o.specs.split(",") if x.strip()] if o.specs is not None else ([] if o.class_name else [71])
-    if not 1<=o.target<=50 or not 1<=o.max_tasks<=12 or not 1<=o.max_seconds<=900:p.error("target 1..50, max-tasks 1..12, max-seconds 1..900")
+    if not 1<=o.target<=50 or not 1<=o.max_tasks<=12 or not 1<=o.max_seconds<=900 or not .15<=o.quota_reserve<=.5:p.error("target 1..50, max-tasks 1..12, max-seconds 1..900, quota-reserve .15...5")
     raise SystemExit(run(o))
 
 

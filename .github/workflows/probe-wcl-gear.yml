@@ -27,6 +27,9 @@ on:
       max_pages:
         description: Maximum ranking pages per encounter
         default: '10'
+      quota_reserve:
+        description: Fraction of hourly points kept unused (0.15 to 0.5)
+        default: '0.25'
 permissions:
   contents: read
   actions: read
@@ -73,6 +76,7 @@ jobs:
           MODE: ${{ inputs.mode }}
           TARGET: ${{ inputs.target }}
           MAX_PAGES: ${{ inputs.max_pages }}
+          QUOTA_RESERVE: ${{ inputs.quota_reserve }}
           RECIPIENT_PUBLIC_KEY: ${{ inputs.recipient_public_key }}
           INTERNAL_CHECKPOINT: ${{ secrets.QFX_GEAR_TEST_CHECKPOINT }}
         run: |
@@ -80,7 +84,7 @@ jobs:
           python -c 'import os,base64,pathlib; from cryptography.hazmat.primitives import serialization; p=pathlib.Path("artifacts/gear/recipient.pem"); p.write_bytes(base64.b64decode(os.environ["RECIPIENT_PUBLIC_KEY"])); serialization.load_pem_public_key(p.read_bytes())'
           python -c 'import os,base64,zlib,pathlib; data=os.environ.get("INTERNAL_CHECKPOINT"); data and pathlib.Path("artifacts/gear/checkpoint.json").write_bytes(zlib.decompress(base64.b64decode(data)))'
           set +e
-          python scripts/collect_gear_recommendations.py --specs "$SPECS" --mode "$MODE" --target "$TARGET" --max-tasks 6 --max-seconds 780 --max-pages "$MAX_PAGES" --internal-test
+          python scripts/collect_gear_recommendations.py --specs "$SPECS" --mode "$MODE" --target "$TARGET" --max-tasks 6 --max-seconds 780 --max-pages "$MAX_PAGES" --quota-reserve "$QUOTA_RESERVE" --internal-test
           echo "result=$?" >> "$GITHUB_OUTPUT"
           exit 0
       - name: Generate clearly labeled synthetic fixtures

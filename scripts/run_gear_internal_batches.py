@@ -134,7 +134,7 @@ def dispatch(spec_ids,target):
         if len(encoded)>47000:raise RuntimeError("checkpoint_secret_size_limit: use one specialization per batch")
         gh("secret","set",SECRET,input=encoded)
     else:gh("secret","delete",SECRET,check=False)
-    inputs={"test_data":"false","specs":",".join(map(str,spec_ids)),"mode":"both","target":str(target),"max_pages":"10",
+    inputs={"test_data":"false","specs":",".join(map(str,spec_ids)),"mode":"both","target":str(target),"max_pages":"10","quota_reserve":"0.15" if target==1 else "0.25",
             "recipient_public_key":base64.b64encode((PRIVATE/"recipient-public.pem").read_bytes()).decode()}
     result=gh("workflow","run","probe-wcl-gear.yml","--ref","feature/gear-recommendations","--json",input=json.dumps(inputs))
     found=re.search(r"/runs/(\d+)",result)
@@ -189,6 +189,12 @@ def main():
         progress["status"]="complete" if progress.get("completeScopes")==80 else "coverage_complete" if args.coverage_only and progress.get("scopesWithData")==80 else "incomplete"
         write(OUTPUT/"progress.json",progress)
         publish_local_progress(progress)
+    except Exception as error:
+        progress=read(OUTPUT/"progress.json",{})
+        progress.update(status="failed",error=str(error)[:300],updatedAt=datetime.now(timezone.utc).isoformat())
+        write(OUTPUT/"progress.json",progress)
+        publish_local_progress(progress)
+        raise
     finally:gh("secret","delete",SECRET,check=False)
 
 
