@@ -264,6 +264,7 @@ def run(opt):
                         except ValueError as e:failures[str(e)]+=1;continue
                         by_report[code].append((row,eid,fight))
                     for code,group in by_report.items():
+                        if len(state["samples"])>=opt.target:break
                         report=(client.query(REPORT,{"code":code,"fights":sorted({x[2] for x in group})},kind="combatants").get("reportData") or {}).get("report") or {}
                         diag["schemaShapes"].setdefault("reportKeys",sorted(report))
                         for row,eid,fight in group:

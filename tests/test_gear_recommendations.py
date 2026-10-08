@@ -210,10 +210,12 @@ def test_checkpoint_resume_after_quota_pause_preserves_page_and_deduplicates(tmp
     rows=[{"name":"Synthetic"+str(i),"canonicalID":i,"report":{"code":"TEST","fightID":1}} for i in (100,101)]
     report={"startTime":date_ms,"fights":[{"id":1,"encounterID":1,"difficulty":5,"kill":True,"startTime":0}],"masterData":{"actors":[{"id":i,"name":"Synthetic"+str(i),"type":"Player"} for i in (100,101)]},
             "combatants":{"data":[{"sourceID":i,"fight":1,"specID":71,"gear":gear,"stats":{"critMelee":100,"hasteMelee":100,"mastery":100,"versatilityDamageDone":100}} for i in (100,101)]}}
+    query_calls=[]
     class FakeClient:
         def __init__(self,**kw):self.calls=0
         def query(self,query,variables=None,kind=None):
             self.calls+=1
+            query_calls.append((kind,variables))
             if kind=="metadata":return {"worldData":{"zones":[zone]}}
             if kind=="rankings":return {"worldData":{"encounter":{"characterRankings":{"rankings":rows}}}}
             if kind=="combatants":return {"reportData":{"report":report}}
@@ -244,6 +246,12 @@ def test_checkpoint_resume_after_quota_pause_preserves_page_and_deduplicates(tmp
     assert collector.run(opt)==0
     output=json.loads(opt.output.read_text())
     assert output["purpose"]=="internal_real_data_test" and output["redistributionAuthorized"] is False
+    rows.append({"name":"Synthetic102","canonicalID":102,"report":{"code":"UNNEEDED","fightID":1}})
+    opt.target=1
+    opt.checkpoint=tmp_path/"coverage-checkpoint.json"
+    query_calls.clear()
+    assert collector.run(opt)==0
+    assert len([x for x in query_calls if x[0]=="combatants"])==1
 
 
 def test_internal_transfer_encryption_authentication_and_roundtrip(tmp_path):
