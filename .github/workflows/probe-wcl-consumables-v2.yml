@@ -1,11 +1,6 @@
-name: Validate WCL pull-time flasks and food (one-off)
+name: Probe WCL Flask and Food Data (manual)
 
 on:
-  pull_request:
-    paths:
-      - "scripts/probe_wcl_consumables_v2.py"
-      - "tests/test_probe_wcl_consumables_v2.py"
-      - ".github/workflows/probe-wcl-consumables-v2.yml"
   workflow_dispatch:
 
 permissions:
@@ -13,7 +8,7 @@ permissions:
 
 jobs:
   live:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
