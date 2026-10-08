@@ -204,3 +204,42 @@ jobs:
                               if isinstance(val,dict) and ("gear" in n.lower() or "loadout" in n.lower()):print("SUCCESS_GEAR_KEYS",n,list(val)[:32],flush=True)
                   break
           PY
+
+      - name: Inspect ItemID quality and item level for CN guild Identity confirmed kill
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,urllib.parse,urllib.request,urllib.error
+          def req(path,p):
+              url="https://raider.io"+path+"?"+urllib.parse.urlencode(p)
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(url,headers={"User-Agent":"GearInspect-Successful-RaidItem-Probe/1.0","Accept":"application/json"}),timeout=18) as r:return r.status,json.load(r)
+              except urllib.error.HTTPError as e:return e.code,{"error":str(e.code)}
+              except Exception as e:return -1,{"error":type(e).__name__}
+          _,rank=req("/api/v1/raiding/raid-rankings",{"raid":"the-venomous-abyss","difficulty":"mythic","region":"cn","limit":5,"page":0})
+          guild=next((r.get("guild") for r in rank.get("raidRankings",[]) if (r.get("guild") or {}).get("name")=="Identity"),None)
+          if not guild:raise SystemExit("MISSING_GUILD")
+          p={"raid":"the-venomous-abyss","boss":"nekzali-the-soulcoiler","difficulty":"mythic","region":"cn","realm":guild["realm"]["slug"],"guild":guild["name"]}
+          _,pulls=req("/api/v1/live-tracking/guild/boss-pulls",p)
+          kills=[(r.get("details") or {}) for r in pulls.get("pulls",[]) if (r.get("details") or {}).get("is_success") is True]
+          if not kills:raise SystemExit("NO_KILL")
+          chosen=kills[-1]
+          status,comp=req("/api/v1/live-tracking/guild/raid-comps",{"raid":p["raid"],"difficulty":p["difficulty"],"region":p["region"],"realm":p["realm"],"guild":p["guild"],"id":chosen.get("id")})
+          print("CN_KILL", "is_success",chosen.get("is_success"),"id",chosen.get("id"),"comp_http",status,flush=True)
+          d=comp.get("details") or {}
+          print("COMP_DETAILS_KEYS",list(d)[:60],flush=True)
+          def inspect(obj,label,depth=0):
+              if depth>5:return
+              if isinstance(obj,dict):
+                  ks=list(obj)
+                  matching=[x for x in ks if any(s in str(x).lower() for s in ("gear","item","roster","raidcomp","char","member","spec","quality"))]
+                  print("OBJECT",label,"KEYS",ks[:40],"RELEVANT",matching,flush=True)
+                  for key in matching[:8]:
+                      inspect(obj.get(key),label+"."+str(key),depth+1)
+              elif isinstance(obj,list):
+                  print("ARRAY",label,"LEN",len(obj),flush=True)
+                  if obj:inspect(obj[0],label+"[0]",depth+1)
+              else:
+                  print("SCALAR",label,"TYPE",type(obj).__name__,"VALUE",str(obj)[:130],flush=True)
+          inspect(d,"details")
+          PY
