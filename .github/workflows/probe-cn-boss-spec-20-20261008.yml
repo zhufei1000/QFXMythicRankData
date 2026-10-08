@@ -1,0 +1,228 @@
+name: Probe CN raid Boss x Spec 20 unique gear snapshots
+
+on:
+  push:
+    branches:
+      - probe/raiderio-cn-gear-20261008
+    paths:
+      - .github/workflows/probe-cn-boss-spec-20-20261008.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Test eight bosses with per-spec distinct-player gear snapshots
+        shell: bash
+        run: |
+          python - <<'PY'
+          import collections
+          import datetime
+          import json
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          RAID = "the-venomous-abyss"
+          REGION = "cn"
+          DIFFICULTY = "mythic"
+          GUILD_CAP = 32
+          TARGET = 20
+          MIN_VALID_SLOTS = 10
+          REQUEST_PAUSE_SEC = .16
+          base = "https://raider.io"
+          metrics = collections.Counter()
+          samples = collections.defaultdict(dict)
+          spec_names = {}
+          last_call = 0
+
+          def get(path, params):
+              global last_call
+              delay = REQUEST_PAUSE_SEC - (time.monotonic() - last_call)
+              if delay > 0: time.sleep(delay)
+              last_call = time.monotonic()
+              url = base + path + "?" + urllib.parse.urlencode(params)
+              req = urllib.request.Request(url, headers={
+                  "Accept": "application/json",
+                  "User-Agent": "GearInspect-BossSpec-FeasibilityTest/1.0"
+              })
+              for attempt in range(3):
+                  try:
+                      with urllib.request.urlopen(req, timeout=18) as response:
+                          metrics["http_200"] += 1
+                          return response.status, json.load(response)
+                  except urllib.error.HTTPError as exc:
+                      metrics["http_" + str(exc.code)] += 1
+                      if exc.code == 429 and attempt < 2:
+                          time.sleep(3 * (attempt + 1))
+                          continue
+                      return exc.code, {}
+                  except Exception as exc:
+                      metrics["network_errors"] += 1
+                      if attempt < 1:time.sleep(1)
+                      else:return -1, {}
+              return -1, {}
+
+          code, static = get("/api/v1/raiding/static-data", {"expansion_id": 11})
+          raid = next((x for x in static.get("raids", []) if x.get("slug") == RAID), {})
+          bosses = [(x["slug"], x.get("name", x["slug"])) for x in raid.get("encounters", []) if x.get("slug")]
+          print("TEST_CONFIG", json.dumps({
+              "region": REGION, "raid": RAID, "difficulty": DIFFICULTY,
+              "target_unique_players_per_boss_spec": TARGET,
+              "guild_cap": GUILD_CAP, "boss_count": len(bosses),
+              "bosses": bosses,
+          }, ensure_ascii=False), flush=True)
+          if code != 200 or len(bosses) != 8:raise SystemExit("EXPECTED_EIGHT_BOSSES")
+
+          guilds = []
+          guild_ids = set()
+          for page in range(3):
+              status, data = get("/api/v1/raiding/raid-rankings", {
+                  "raid": RAID, "difficulty": DIFFICULTY, "region": REGION,
+                  "page": page, "limit": 50,
+              })
+              rows = data.get("raidRankings") or []
+              print("RANKING_PAGE", page, "http", status, "rows", len(rows), flush=True)
+              if status != 200 or not rows:break
+              for row in rows:
+                  privacy = row.get("guildPrivacy") or {}
+                  if privacy.get("raidComps") is not True:
+                      metrics["private_guilds_skipped"] += 1
+                      continue
+                  g = row.get("guild") or {}
+                  slug = (g.get("realm") or {}).get("slug")
+                  name = g.get("name")
+                  gid = g.get("id")
+                  if gid in guild_ids or not slug or not name:continue
+                  guilds.append((str(slug), name, gid))
+                  guild_ids.add(gid)
+                  if len(guilds) >= GUILD_CAP: break
+              if len(guilds) >= GUILD_CAP:break
+          print("PUBLIC_GUILDS_SELECTED", len(guilds), flush=True)
+          if not guilds:raise SystemExit("NO_PUBLIC_GUILDS")
+
+          for guild_index, (realm, name, gid) in enumerate(guilds, 1):
+              guild_valid = 0
+              guild_failed = 0
+              guild_kill = 0
+              for boss_slug, boss_name in bosses:
+                  p = {
+                      "raid": RAID, "boss": boss_slug, "difficulty": DIFFICULTY,
+                      "region": REGION, "realm": realm, "guild": name,
+                  }
+                  code, history = get("/api/v1/live-tracking/guild/boss-pulls", p)
+                  metrics["pull_queries"] += 1
+                  if code != 200:
+                      metrics["pull_query_failures"] += 1
+                      continue
+                  kills = [(x.get("details") or {}) for x in (history.get("pulls") or [])
+                           if (x.get("details") or {}).get("is_success") is True]
+                  if not kills:
+                      metrics["no_kill_boss_pairs"] += 1
+                      continue
+                  # Select latest visible successful kill, not a wipe and not a current-gear profile.
+                  chosen = max(kills, key=lambda x: str(x.get("pull_ended_at") or ""))
+                  q = {
+                      "raid": RAID, "difficulty": DIFFICULTY, "region": REGION,
+                      "realm": realm, "guild": name, "id": chosen.get("id"),
+                  }
+                  code, comp = get("/api/v1/live-tracking/guild/raid-comps", q)
+                  metrics["comp_queries"] += 1
+                  if code != 200:
+                      metrics["comp_query_failures"] += 1
+                      guild_failed += 1
+                      continue
+                  details = comp.get("details") or {}
+                  members = details.get("roster") or []
+                  if not isinstance(members, list) or not members:
+                      metrics["empty_rosters"] += 1
+                      continue
+                  guild_kill += 1
+                  metrics["valid_kill_rosters"] += 1
+                  for member in members:
+                      char = (member.get("character") or {})
+                      spec = (char.get("spec") or {})
+                      sid = spec.get("id")
+                      if not isinstance(sid, int) or sid <= 0:
+                          metrics["invalid_spec"] += 1
+                          continue
+                      identity = char.get("wow_character_id")
+                      if not identity:
+                          # Require reliable stable ID to avoid counting same character twice.
+                          metrics["missing_stable_character_id"] += 1
+                          continue
+                      items = ((char.get("items") or {}).get("items") or {})
+                      if not isinstance(items, dict):
+                          metrics["invalid_gear"] += 1
+                          continue
+                      verified = []
+                      for slot, item in items.items():
+                          if slot in ("shirt", "tabard") or not isinstance(item, dict): continue
+                          iid, quality, ilvl = item.get("item_id"), item.get("item_quality"), item.get("item_level")
+                          if isinstance(iid, int) and iid > 0 and isinstance(quality, int) and isinstance(ilvl, (int,float)) and ilvl > 0:
+                              verified.append((slot, iid, quality, ilvl))
+                      if len(verified) < MIN_VALID_SLOTS:
+                          metrics["invalid_gear"] += 1
+                          continue
+                      metrics["valid_gear_snapshots_examined"] += 1
+                      key = (boss_slug, sid)
+                      spec_names[sid] = spec.get("name", str(sid))
+                      if identity in samples[key]:
+                          metrics["duplicate_within_boss_spec"] += 1
+                          continue
+                      if len(samples[key]) < TARGET:
+                          samples[key][identity] = verified
+                          guild_valid += 1
+                      else:
+                          metrics["group_already_full"] += 1
+              if guild_index % 4 == 0 or guild_index == len(guilds):
+                  reached = sum(len(x) == TARGET for x in samples.values())
+                  print("PROGRESS", guild_index, "/", len(guilds),
+                      "new_samples_this_guild", guild_valid,
+                      "kill_rosters_this_guild", guild_kill,
+                      "filled_boss_spec_cells", reached,
+                      "tracked_boss_spec_cells", len(samples),
+                      flush=True)
+
+          seen_ids = set(spec_names)
+          results = []
+          for boss_slug, boss_name in bosses:
+              per_spec = {sid: len(samples[(boss_slug, sid)]) for sid in seen_ids}
+              counts = list(per_spec.values())
+              results.append({
+                  "boss": boss_slug,
+                  "boss_name": boss_name,
+                  "specs_with_samples": sum(n > 0 for n in counts),
+                  "specs_at_20": sum(n >= TARGET for n in counts),
+                  "specs_10_to_19": sum(10 <= n < TARGET for n in counts),
+                  "specs_1_to_9": sum(0 < n < 10 for n in counts),
+                  "total_gear_snapshots_capped_at_20": sum(counts),
+                  "top_8": sorted(([sid, spec_names[sid], n] for sid,n in per_spec.items()), key=lambda x:(-x[2], x[0]))[:8],
+                  "bottom_positive_8": sorted(([sid, spec_names[sid], n] for sid,n in per_spec.items() if n], key=lambda x:(x[2],x[0]))[:8],
+              })
+          summary = {
+              "guilds_examined":len(guilds),
+              "bosses":len(bosses),
+              "different_specializations_seen":len(seen_ids),
+              "boss_spec_cells_total_40_specs":len(bosses)*40,
+              "boss_spec_cells_at_20":sum(row["specs_at_20"] for row in results),
+              "boss_spec_cells_with_any":sum(row["specs_with_samples"] for row in results),
+              "effective_samples_capped_at_20":sum(row["total_gear_snapshots_capped_at_20"] for row in results),
+              "metrics":dict(metrics),
+          }
+          print("FINAL_SUMMARY",json.dumps(summary,ensure_ascii=False),flush=True)
+          for row in results:
+              print("BOSS_RESULT",json.dumps(row,ensure_ascii=False),flush=True)
+          per_spec = sorted(({
+              "spec_id": sid, "spec_name": spec_names[sid],
+              "bosses_at_20": sum(len(samples[(boss_slug,sid)])>=20 for boss_slug,_ in bosses),
+              "bosses_with_any":sum(bool(samples[(boss_slug,sid)]) for boss_slug,_ in bosses),
+              "boss_counts":[len(samples[(boss_slug,sid)]) for boss_slug,_ in bosses]
+          } for sid in seen_ids), key=lambda x: (x["bosses_at_20"],sum(x["boss_counts"]), x["spec_id"]))
+          print("SPEC_RESULT",json.dumps(per_spec,ensure_ascii=False),flush=True)
+          print("RESULT","FEASIBLE" if summary["boss_spec_cells_at_20"]>0 else "PARTIAL_COVERAGE_ONLY",flush=True)
+          PY
