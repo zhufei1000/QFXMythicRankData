@@ -119,3 +119,49 @@ jobs:
                           print("PULL_FIRST",boss,k,view(v[0]),flush=True)
               break
           PY
+
+      - name: Verify success-only CN raidcomp individual gear fields
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,urllib.parse,urllib.request,urllib.error
+          BASE="https://raider.io"
+          def req(path,p):
+              url=BASE+path+"?"+urllib.parse.urlencode(p)
+              try:
+                  request=urllib.request.Request(url,headers={"User-Agent":"GearInspect-KillOnly-RaidComp/1.0","Accept":"application/json"})
+                  with urllib.request.urlopen(request,timeout=19) as r:return r.status,json.load(r)
+              except urllib.error.HTTPError as e:return e.code,{"error":e.read(250).decode("utf-8","replace")}
+              except Exception as e:return -1,{"error":repr(e)[:160]}
+          p={"raid":"the-venomous-abyss","boss":"nekzali-the-soulcoiler","difficulty":"mythic","region":"cn","realm":"scarlet-crusade","guild":"中洲队"}
+          status,pulls=req("/api/v1/live-tracking/guild/boss-pulls",p)
+          kills=[]
+          for row in pulls.get("pulls",[]):
+              detail=row.get("details") or {}
+              if detail.get("is_success") is True:
+                  kills.append(detail)
+          print("PULL_RESULT","HTTP",status,"total",len(pulls.get("pulls",[])),"successful",len(kills),flush=True)
+          if not kills:raise SystemExit(0)
+          d=kills[-1]
+          print("KILL_ID",d.get("id"),"RAIDCOMP_URL_PRESENT",bool(d.get("raidcomp_url")),"MEMBER_COUNT",d.get("num_members"),flush=True)
+          queries=[
+              {"raid":p["raid"],"id":d.get("id"),"difficulty":p["difficulty"],"region":p["region"],"realm":p["realm"],"guild":p["guild"]},
+              {"raid":p["raid"],"id":d.get("id"),"guild_id":2373274},
+          ]
+          for i,qp in enumerate(queries):
+              status,comp=req("/api/v1/live-tracking/guild/raid-comps",qp)
+              print("RAIDCOMP",i,"HTTP",status,"ROOT_KEYS",list(comp.keys())[:35],flush=True)
+              for key,v in comp.items():
+                  if isinstance(v,list):
+                      print("LIST",i,key,"COUNT",len(v),"ENTRY_KEYS",list(v[0].keys())[:45] if v and isinstance(v[0],dict) else [],flush=True)
+                      if v and isinstance(v[0],dict):
+                          member=v[0]; print("FIRST_MEMBER_SUMMARY",i,{k:str(value)[:90] for k,value in member.items() if k in ("name","spec","spec_id","class","character","gear","loadout","items")},flush=True)
+                          for mk,mv in member.items():
+                              if isinstance(mv,dict) and ("gear" in mk.lower() or "loadout" in mk.lower()):
+                                  print("GEAR_SHAPE",i,mk,list(mv.keys())[:28],flush=True)
+                                  items=mv.get("items") or mv.get("equipped_items")
+                                  if isinstance(items,dict):
+                                      key, value=next(iter(items.items()),(None,None))
+                                      print("GEAR_FIRST_SLOT",key,list(value.keys())[:32] if isinstance(value,dict) else str(value)[:150],flush=True)
+              if status!=200:print("COMP_ERROR",i,str(comp)[:180],flush=True)
+          PY
