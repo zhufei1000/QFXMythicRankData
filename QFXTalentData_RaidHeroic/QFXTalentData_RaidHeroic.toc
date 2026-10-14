@@ -1,4 +1,4 @@
-## Interface: 120007, 120100
+## Interface: 120007, 120100, 120105
 ## Version: 2026.10.13.0857.24
 ## Title: |cff00ccffQFX Talent Data - Heroic Raid|r
 ## Notes: Load-on-demand compact QFX talent recommendation data.
