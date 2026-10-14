@@ -2,9 +2,9 @@ local API=_G.QFXTalentData
 if not API then return end
 local manifest={
   apiVersion=2,
-  dataVersion="2026.10.13.0857.24",
+  dataVersion="2026.10.14.0735.53",
   minDisplayVersion="0.9.0",
-  generatedAt="2026-10-13T08:57:24.690666+00:00",
+  generatedAt="2026-10-14T07:35:53.996842+00:00",
   seasonName="MN Season 2",
   seasonSlug="season-mn-2",
   source="Raider.IO global Mythic+ rankings and Warcraft Logs global raid rankings",
@@ -130,6 +130,12 @@ local manifest={
         {id=3421,slug="the-twin-fangs",names={enUS="The Twin Fangs", zhCN="双子毒牙", zhTW="雙生毒牙"}},
         {id=3429,slug="the-coiled-altar",names={enUS="The Coiled Altar", zhCN="盘卷祭坛", zhTW="盤蛇祭壇"}},
         {id=3492,slug="ulatek",names={enUS="Ula'tek", zhCN="乌拉特克", zhTW="烏拉特克"}},
+      },
+    },
+    {
+      id=17059,slug="the-unbinding-of-kithix",names={enUS="The Unbinding of Kith'ix"},aliases={"the-unbinding-of-kithix", "The Unbinding of Kith'ix"},
+      bosses={
+        {id=3513,slug="kith-ix",names={enUS="Kith'ix"}},
       },
     },
   },
