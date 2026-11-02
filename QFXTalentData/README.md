@@ -2,7 +2,7 @@
 
 Low-allocation V2 talent data split into three load-on-demand modules.
 
-Version: `2026.11.01.0806.54`
+Version: `2026.11.02.0811.14`
 
 Minimum display addon version: `0.9.0`
 
