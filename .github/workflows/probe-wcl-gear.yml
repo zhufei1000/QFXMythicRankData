@@ -1,0 +1,84 @@
+name: Probe WCL Gear Data (isolated)
+
+on:
+  pull_request:
+    paths:
+      - "scripts/probe_wcl_gear_v1.py"
+      - "tests/test_probe_wcl_gear_v1.py"
+      - ".github/workflows/probe-wcl-gear.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sample:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Unit tests (no WCL requests)
+        run: python -m pytest -q tests/test_probe_wcl_gear_v1.py
+      - name: Verify credentials configured
+        shell: bash
+        env:
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "${WCL_CLIENT_ID}" || { echo "WCL_CLIENT_ID secret missing"; exit 1; }
+          test -n "${WCL_CLIENT_SECRET}" || { echo "WCL_CLIENT_SECRET secret missing"; exit 1; }
+      - name: Sample 100 Arms Warriors in each mode (no talents)
+        id: sample
+        shell: bash
+        env:
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
+          WCL_REQUEST_DELAY: "0.25"
+        run: |
+          set +e
+          python scripts/probe_wcl_gear_v1.py \
+            --mode both --target 100 \
+            --max-pages 5 --max-encounters 3 --max-zones 3 --report-backfills 100 \
+            --output artifacts/wcl_gear_probe.json
+          code=$?
+          echo "exit_code=${code}" >> "${GITHUB_OUTPUT}"
+          exit 0
+      - name: Publish diagnostic summary (counts only)
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, pathlib, os
+          file = pathlib.Path('artifacts/wcl_gear_probe.json')
+          lines = ['## Isolated WCL gear feasibility probe', '']
+          if not file.exists():
+              lines.append('No JSON produced: authentication, schema, or connection failed. See job log.')
+          else:
+              d = json.loads(file.read_text(encoding='utf-8'))
+              lines.extend(['| Scope | Unique players | Full gear + 4 stats | With enchants | With gems | BonusIDs | Requests | Elapsed |', '|---|---:|---:|---:|---:|---:|---:|---:|'])
+              for name, row in d['modes'].items():
+                  lines.append('| {} | {} | {} | {} | {} | {} | {} | {}s |'.format(name,row['sample_count'],row['complete_samples'],row['with_enchants'],row['with_gems'],row['with_bonus_ids'],row['api_requests'],row['elapsed_seconds']))
+              lines.extend(['', '**Note:** BonusIDs are not verified embellishments. No player identities are exported.', '', 'Raw observed diagnostics (without player names) are available as an artifact.'])
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write('\n'.join(lines) + '\n')
+          PY
+      - name: Upload sanitized aggregated result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wcl-gear-feasibility-${{ github.run_id }}
+          path: artifacts/wcl_gear_probe.json
+          if-no-files-found: warn
+          retention-days: 3
+      - name: Require collection target
+        if: steps.sample.outputs.exit_code != '0'
+        run: |
+          echo "At least one mode did not reach 100 unique players; inspect diagnostic artifact."
+          exit 1

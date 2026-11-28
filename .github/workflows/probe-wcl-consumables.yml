@@ -1,0 +1,79 @@
+name: Probe WCL Consumables (flask potion food)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Test consumable parsing
+        run: python -m pytest -q tests/test_probe_wcl_consumables_v1.py
+      - name: Check secrets configured
+        shell: bash
+        env:
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
+        run: |
+          test -n "${WCL_CLIENT_ID}" && test -n "${WCL_CLIENT_SECRET}"
+      - name: Sample Arms Warrior flask combat potion and food on WCL
+        id: sample
+        env:
+          WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+          WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
+          WCL_REQUEST_DELAY: "0.25"
+        shell: bash
+        run: |
+          set +e
+          python scripts/probe_wcl_consumables_v1.py \
+            --mode both --target 12 \
+            --max-pages 2 --max-encounters 2 --max-zones 2 \
+            --max-event-pages 3 \
+            --output artifacts/wcl_consumables_probe.json
+          code=$?
+          echo "code=${code}" >> "${GITHUB_OUTPUT}"
+          exit 0
+      - name: Report summarized findings
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json, os
+          p = Path('artifacts/wcl_consumables_probe.json')
+          out = ['## WCL Flask / Combat Potion / Food Probe', '']
+          if not p.exists():
+              out.append('No result JSON (check the job log).')
+          else:
+              d = json.loads(p.read_text(encoding='utf-8'))
+              out += ['| Mode | Attempted | Matched players | Flask buffs | Food buffs | Combat potion casts | Combat potion buffs |',
+                      '|---|---:|---:|---:|---:|---:|---:|']
+              for mode, v in d['results'].items():
+                  c = v['category_players']
+                  out.append('| {} | {} | {} | {} | {} | {} | {} |'.format(mode, v['players_attempted'],v['actors_matched'],c.get('flask_buff',0),c.get('food_buff',0),c.get('combat_potion_cast',0),c.get('combat_potion_buff',0)))
+              out += ['', 'API requests: '+str(d['total_api_requests']), 'Elapsed seconds: '+str(d['total_elapsed_seconds']), '',
+                      'Note: Food buff is not necessarily an exact dish, and potion buff is not a logged cast.']
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write('\n'.join(out) + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wcl-consumables-probe-${{ github.run_id }}
+          path: artifacts/wcl_consumables_probe.json
+          retention-days: 3
+          if-no-files-found: warn
+      - name: Fail if API probe did not complete
+        if: steps.sample.outputs.code != '0'
+        run: exit 1
